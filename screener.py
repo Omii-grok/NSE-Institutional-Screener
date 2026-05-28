@@ -48,6 +48,8 @@ html, body, [class*="css"] {
 .block-container {
     padding: 1.5rem 2rem 3rem !important;
     max-width: 1440px;
+    margin-left: auto !important;
+    margin-right: auto !important;
 }
 @media (max-width: 768px) {
     .block-container { padding: 1rem !important; }
