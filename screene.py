@@ -363,10 +363,24 @@ def fetch_nse_data() -> tuple[pd.DataFrame, datetime.date]:
             checked += 1
         candidate -= datetime.timedelta(days=1)
 
+    # ── Local file fallback (committed by GitHub Actions daily) ──────────────
+    import pathlib
+    local_csv = pathlib.Path("sec_bhavdata_full.csv")
+    if local_csv.exists():
+        try:
+            df = pd.read_csv(local_csv, skipinitialspace=True)
+            df.columns = df.columns.str.strip()
+            # Infer date from file modification time
+            mtime = datetime.date.fromtimestamp(local_csv.stat().st_mtime)
+            return df, mtime
+        except Exception:
+            pass
+
     raise ConnectionError(
-        "Could not fetch NSE data for the last 7 trading days. "
-        "NSE servers may be temporarily blocking cloud IPs. "
-        "Please try again later, or check the NSE archives manually."
+        "Could not fetch NSE data for the last 7 trading days, "
+        "and no local backup file (sec_bhavdata_full.csv) was found. "
+        "On Streamlit Cloud: add the GitHub Actions workflow (fetch_nse.yml) "
+        "so a fresh CSV is committed to the repo every weekday evening."
     )
 
 
