@@ -1,0 +1,37 @@
+name: Update NSE Bhavcopy
+
+on:
+  schedule:
+    - cron: '30 13 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Dependencies
+      run: |
+        pip install pandas requests pytz
+
+    - name: Run Fetch Script
+      run: python fetch_daily.py
+
+    - name: Commit Updated CSV
+      run: |
+        git config --global user.name "github-actions"
+        git config --global user.email "actions@github.com"
+
+        git add sec_bhavdata_full.csv
+
+        git commit -m "Auto update NSE bhavcopy" || echo "No changes"
+
+        git push
