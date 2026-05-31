@@ -52,13 +52,14 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add sec_bhavdata_full.csv
+          # Track the entire data directory instead of a single file
+          git add data/
 
           # Only commit if something actually changed
           if git diff --staged --quiet; then
             echo "✅ CSV unchanged — nothing to commit"
           else
-            git commit -m "📊 Auto-update NSE bhavcopy [$(date +'%Y-%m-%d %H:%M IST' --date='TZ=\"Asia/Kolkata\" now')]"
+            git commit -m "📊 Auto-update historical data [$(TZ='Asia/Kolkata' date +'%Y-%m-%d %H:%M IST')]"
             git push
-            echo "✅ CSV updated and pushed to GitHub"
+            echo "✅ New historical file pushed to GitHub"
           fi

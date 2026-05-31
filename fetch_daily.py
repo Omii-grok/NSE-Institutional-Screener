@@ -2,16 +2,17 @@
 fetch_daily.py
 ==============
 Called by GitHub Actions every weekday at 7 PM IST.
-Downloads sec_bhavdata_full.csv from NSE Archives and saves it locally.
-GitHub Actions then commits the file back to the repo.
+Downloads sec_bhavdata_full.csv from NSE Archives and saves it historically by date.
+GitHub Actions then commits the entire data/ directory back to the repo.
 
 Exit codes:
-  0  — CSV downloaded successfully
+  0  — CSV downloaded successfully or verified valid historical database state
   0  — No new data (weekend / holiday / file not yet uploaded) — NOT an error
   1  — Hard network / server failure after all retries
 """
 
 import datetime
+import os
 import sys
 import requests
 import pytz
@@ -52,7 +53,7 @@ HEADERS = {
     "Connection":      "keep-alive",
 }
 
-OUTPUT_FILE = "sec_bhavdata_full.csv"
+DATA_DIR = "data"
 LOOKBACK_DAYS = 10       # How many past trading days to search
 MIN_FILE_SIZE = 10_000   # Bytes — anything smaller is an error page
 
@@ -77,21 +78,26 @@ def warm_session() -> requests.Session:
 
 def try_download(session: requests.Session, d: datetime.date) -> bool:
     """Attempt to download bhavcopy for date d. Returns True on success."""
-    date_str = d.strftime("%d%m%Y")
+    date_str = d.strftime("%d%m%Y")    # Format for NSE URL (DDMMYYYY)
+    file_str = d.strftime("%Y_%m_%d")   # Format for historic file preservation (YYYY_MM_DD)
     url = (
         f"https://nsearchives.nseindia.com/products/content/"
         f"sec_bhavdata_full_{date_str}.csv"
     )
     print(f"🔽 Trying: {url}")
 
+    # Explicitly ensure target data folder exists
+    os.makedirs(DATA_DIR, exist_ok=True)
+    target_output_path = os.path.join(DATA_DIR, f"bhavcopy_{file_str}.csv")
+
     try:
         resp = session.get(url, headers=HEADERS, timeout=45)
         print(f"   HTTP {resp.status_code} | Size: {len(resp.content):,} bytes")
 
         if resp.status_code == 200 and len(resp.content) > MIN_FILE_SIZE:
-            with open(OUTPUT_FILE, "wb") as f:
+            with open(target_output_path, "wb") as f:
                 f.write(resp.content)
-            print(f"✅ Saved {OUTPUT_FILE} ({len(resp.content):,} bytes) for {d}")
+            print(f"✅ Saved {target_output_path} ({len(resp.content):,} bytes) for {d}")
             return True
         else:
             print(f"   ⚠️  File too small or bad status — skipping")
@@ -110,13 +116,13 @@ def main() -> None:
     weekday  = today.strftime("%A")
 
     print(f"\n{'='*60}")
-    print(f"  NSE Bhavcopy Downloader")
+    print(f"  NSE Bhavcopy Downloader (Flat-File DB Edition)")
     print(f"  IST Time : {now_ist.strftime('%Y-%m-%d %H:%M:%S %Z')}")
     print(f"  Today    : {today} ({weekday})")
     print(f"{'='*60}\n")
 
     session = warm_session()
-    found   = 0
+    downloaded_date = None
 
     for offset in range(LOOKBACK_DAYS):
         candidate = today - datetime.timedelta(days=offset)
@@ -127,35 +133,38 @@ def main() -> None:
             continue
 
         if try_download(session, candidate):
-            found = offset  # 0 = today, 1 = yesterday, etc.
+            downloaded_date = candidate
             break
         else:
             print(f"   File not available for {candidate} yet\n")
 
-    if found == 0 and try_download.__name__:  # check if file was actually written
-        import pathlib
-        if pathlib.Path(OUTPUT_FILE).exists():
-            size = pathlib.Path(OUTPUT_FILE).stat().st_size
+    # Verification checks
+    if downloaded_date:
+        file_str = downloaded_date.strftime("%Y_%m_%d")
+        target_path = os.path.join(DATA_DIR, f"bhavcopy_{file_str}.csv")
+        
+        if os.path.exists(target_path):
+            size = os.path.getsize(target_path)
             if size > MIN_FILE_SIZE:
-                print(f"\n🎉 Download complete! File size: {size:,} bytes")
-                print(f"   GitHub Actions will now commit to the repo.\n")
+                print(f"\n🎉 Download complete! File size: {size:,} bytes for {downloaded_date}")
+                print(f"   GitHub Actions will now commit historical tracking states to the repo.\n")
                 sys.exit(0)
 
-    # Recheck if file was saved from any iteration
-    import pathlib
-    csv_path = pathlib.Path(OUTPUT_FILE)
-    if csv_path.exists() and csv_path.stat().st_size > MIN_FILE_SIZE:
-        print(f"\n🎉 Download complete! File size: {csv_path.stat().st_size:,} bytes")
-        sys.exit(0)
+    # Fallback state: ensure workspace contains at least one readable dataset
+    if os.path.exists(DATA_DIR):
+        existing_csvs = [f for f in os.listdir(DATA_DIR) if f.endswith('.csv') and os.path.getsize(os.path.join(DATA_DIR, f)) > MIN_FILE_SIZE]
+        if existing_csvs:
+            print(f"\n🎉 Workspace verified: {len(existing_csvs)} valid datasets exist. Exiting clean.")
+            sys.exit(0)
 
-    # If today is weekend / holiday, exit cleanly (not an error)
+    # Clean exit strategy for non-trading environments
     if not is_trading_day(today):
         print(f"\n✅ Today ({today}) is a non-trading day. Nothing to download. Exiting cleanly.")
         sys.exit(0)
 
-    # Genuine failure
+    # Absolute failure state
     print(f"\n🚨 FAILED: Could not download NSE data for any of the last {LOOKBACK_DAYS} days.")
-    print("   NSE servers may be temporarily unavailable.")
+    print("   NSE servers may be temporarily offline or layout configurations have altered.")
     sys.exit(1)
 
 
