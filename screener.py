@@ -15,6 +15,7 @@ import requests
 import pandas as pd
 import pytz
 import streamlit as st
+from scanner_tab import render_chart_scans_tab
 
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -636,7 +637,7 @@ def main():
     # ── CLICKABLE METRIC NAV CARDS ───────────────────────────
     # Each button is styled as a metric card via CSS (nth-child targeting).
     # Clicking sets session_state.view and reruns.
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
 
     with c1:
         active_hni = st.session_state.view == "hni"
@@ -689,6 +690,19 @@ def main():
             st.session_state.view = "overview"
             st.rerun()
 
+    with c5:
+        active_scans = st.session_state.view == "chart_scans"
+        if st.button(
+            f"🎯  CHART SCANS\n"
+            f"{'━'*18}\n"
+            f"  Nifty 500\n"
+            f"Institutional Scans",
+            key="nav_scans",
+            use_container_width=True,
+        ):
+            st.session_state.view = "overview" if active_scans else "chart_scans"
+            st.rerun()
+
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
     # ── BACK BUTTON + ACTIVE SECTION BADGE ───────────────────
@@ -698,6 +712,7 @@ def main():
             "hni":  ("gold",  "🏦  HNI BREAKOUTS"),
             "pure": ("green", "💎  100% PURE DELIVERY"),
             "fno":  ("blue",  "📊  F&O MASTER TRACKER"),
+            "chart_scans": ("blue",  "🎯  CHART SCANS"),
         }
         bcolor, btitle = badge_map[view]
         row_l, row_r = st.columns([5, 1])
@@ -789,6 +804,9 @@ def main():
                 f'</div>',
                 unsafe_allow_html=True,
             )
+
+    if view == "chart_scans":
+        render_chart_scans_tab()
 
     # ── FOOTER ───────────────────────────────────────────────
     st.markdown(
