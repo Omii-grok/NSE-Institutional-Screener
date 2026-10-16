@@ -3,12 +3,12 @@
 NSE F&O Market Intelligence Dashboard - Pro Terminal Edition
 ============================================================
 Featuring:
-- Colourful, institutional-grade UI with dynamic neon tag styling
-- Today Volume, 7-Day Average Volume, and 10-Day Average Volume
-- Visual Volume Surge Indicators and mini intensity bars
-- 52-Week High & Low distance tracking
-- Turnover formatted in Indian Crores (₹Cr)
-- Automatic official NSE F&O Ban detection
+- Vibrant, colorful trading terminal UI
+- Explicit "Today's Volume", "7D Avg Volume", and "10D Avg Volume"
+- Glowing, colorful Volume Intensity Bars (never white)
+- 52-Week High & Low tracking
+- Turnover in Crores (₹Cr)
+- Official NSE F&O Ban detection
 """
 
 import os
@@ -186,38 +186,43 @@ def format_turnover_cr(val_lacs: float) -> str:
         return "Data unavailable"
 
 
-def format_volume_readable(qty: float) -> str:
-    """Format volume into readable K, M, Cr format."""
+def format_volume_with_tag(qty: float) -> str:
+    """Format volume with full comma separation and readable tag."""
     try:
-        qty = float(qty)
-        if qty >= 10_000_000:
-            return f"{qty/10_000_000:.2f} Cr"
-        elif qty >= 1_000_000:
-            return f"{qty/1_000_000:.2f}M"
-        elif qty >= 1_000:
-            return f"{qty/1_000:.1f}K"
-        return f"{int(qty):,}"
+        q = int(qty)
+        if q >= 10_000_000:
+            tag = f"{q / 10_000_000:.2f} Cr"
+        elif q >= 1_000_000:
+            tag = f"{q / 1_000_000:.2f}M"
+        elif q >= 1_000:
+            tag = f"{q / 1_000:.1f}K"
+        else:
+            tag = str(q)
+        return f"{q:,} ({tag})"
     except Exception:
         return "Data unavailable"
 
 
-def build_volume_bar(ratio: float) -> str:
-    """Generate colorful high-contrast visual bar for volume surge ratio."""
+def build_colorful_volume_bar(ratio: float) -> str:
+    """Generate colorful high-contrast visual bar (Orange/Green/Blue/Purple) - NEVER white!"""
     try:
         r = float(ratio)
         if r <= 0:
-            return "░░░░░░░░░░ 0.0x"
-        # 1.0x = 4 blocks, max 10 blocks
-        filled = min(10, max(1, int(r * 4)))
-        bar = "█" * filled + "░" * (10 - filled)
-        if r >= 2.0:
-            return f"🔥 {bar} {r:.2f}x"
-        elif r >= 1.2:
-            return f"⚡ {bar} {r:.2f}x"
+            return "🟪 0.00x"
+        if r >= 2.5:
+            return f"🔥 🟧🟧🟧🟧🟧 {r:.2f}x"
+        elif r >= 2.0:
+            return f"🔥 🟧🟧🟧🟧 {r:.2f}x"
+        elif r >= 1.5:
+            return f"⚡ 🟩🟩🟩 {r:.2f}x"
+        elif r >= 1.0:
+            return f"⚡ 🟩🟩 {r:.2f}x"
+        elif r >= 0.7:
+            return f"📊 🟦🟦 {r:.2f}x"
         else:
-            return f"📊 {bar} {r:.2f}x"
+            return f"💤 🟪 {r:.2f}x"
     except Exception:
-        return "░░░░░░░░░░"
+        return "🟪 0.00x"
 
 
 # ---------------------------------------------------------------------------
@@ -228,9 +233,9 @@ def _style_change(val):
     try:
         v = float(val)
         if v > 0:
-            return "color: #00e676; font-weight: 700; background-color: rgba(0, 230, 118, 0.08);"
+            return "color: #00e676; font-weight: 700; background-color: rgba(0, 230, 118, 0.12); border-radius: 4px;"
         elif v < 0:
-            return "color: #ff3d57; font-weight: 700; background-color: rgba(255, 61, 87, 0.08);"
+            return "color: #ff3d57; font-weight: 700; background-color: rgba(255, 61, 87, 0.12); border-radius: 4px;"
         return "color: #94a3b8;"
     except Exception:
         return ""
@@ -240,9 +245,9 @@ def _style_delivery(val):
     try:
         v = float(val)
         if v >= 70.0:
-            return "color: #00ff88; font-weight: 800; background-color: rgba(0, 255, 136, 0.12);"
+            return "color: #00ff88; font-weight: 800; background-color: rgba(0, 255, 136, 0.15); border-radius: 4px;"
         elif v >= 50.0:
-            return "color: #fbbf24; font-weight: 700; background-color: rgba(251, 191, 36, 0.10);"
+            return "color: #fbbf24; font-weight: 700; background-color: rgba(251, 191, 36, 0.12); border-radius: 4px;"
         return "color: #94a3b8;"
     except Exception:
         return ""
@@ -252,9 +257,9 @@ def _style_dist_high(val):
     try:
         v = float(val)
         if v >= -1.0:
-            return "color: #f59e0b; font-weight: 800; background-color: rgba(245, 158, 11, 0.18);"
+            return "color: #f59e0b; font-weight: 800; background-color: rgba(245, 158, 11, 0.22); border-radius: 4px;"
         elif v >= -3.0:
-            return "color: #fbbf24; font-weight: 700;"
+            return "color: #fbbf24; font-weight: 700; background-color: rgba(251, 191, 36, 0.10); border-radius: 4px;"
         elif v >= -5.0:
             return "color: #fde047; font-weight: 600;"
         return "color: #94a3b8;"
@@ -266,29 +271,28 @@ def _style_dist_low(val):
     try:
         v = float(val)
         if v <= 1.0:
-            return "color: #c084fc; font-weight: 800; background-color: rgba(192, 132, 252, 0.18);"
+            return "color: #c084fc; font-weight: 800; background-color: rgba(192, 132, 252, 0.22); border-radius: 4px;"
         elif v <= 5.0:
-            return "color: #e879f9; font-weight: 600;"
+            return "color: #e879f9; font-weight: 600; background-color: rgba(232, 121, 249, 0.10); border-radius: 4px;"
         return "color: #94a3b8;"
     except Exception:
         return ""
 
 
-def _style_vol_ratio(val):
-    try:
-        v = float(val)
-        if v >= 2.0:
-            return "color: #fb923c; font-weight: 800; background-color: rgba(251, 146, 60, 0.16);"
-        elif v >= 1.2:
-            return "color: #38bdf8; font-weight: 700;"
-        return "color: #94a3b8;"
-    except Exception:
-        return ""
+def _style_vol_bar_cell(val):
+    s = str(val)
+    if "🔥" in s or "🟧" in s:
+        return "background-color: rgba(249, 115, 22, 0.22); color: #fb923c; font-weight: 800; border-radius: 6px;"
+    elif "⚡" in s or "🟩" in s:
+        return "background-color: rgba(16, 185, 129, 0.20); color: #34d399; font-weight: 700; border-radius: 6px;"
+    elif "🟦" in s:
+        return "background-color: rgba(59, 130, 246, 0.18); color: #60a5fa; font-weight: 600; border-radius: 6px;"
+    return "background-color: rgba(148, 163, 184, 0.12); color: #cbd5e1; border-radius: 6px;"
 
 
 def _style_ban(val):
     if "BAN" in str(val):
-        return "color: #ff4d4f; font-weight: 800; background-color: rgba(255, 77, 79, 0.22); border-radius: 4px;"
+        return "color: #ff4d4f; font-weight: 800; background-color: rgba(255, 77, 79, 0.25); border: 1px solid #ef4444; border-radius: 4px;"
     return "color: #2dd4bf; font-weight: 600;"
 
 
@@ -303,8 +307,8 @@ def apply_colorful_terminal_styling(df: pd.DataFrame):
         styler = styler.map(_style_dist_high, subset=["Dist 52W High (%)"])
     if "Dist 52W Low (%)" in df.columns:
         styler = styler.map(_style_dist_low, subset=["Dist 52W Low (%)"])
-    if "Vol Surge (7D)" in df.columns:
-        styler = styler.map(_style_vol_ratio, subset=["Vol Surge (7D)"])
+    if "Volume Intensity Bar" in df.columns:
+        styler = styler.map(_style_vol_bar_cell, subset=["Volume Intensity Bar"])
     if "Ban Status" in df.columns:
         styler = styler.map(_style_ban, subset=["Ban Status"])
     return styler
@@ -388,15 +392,13 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
             "Symbol": sym,
             "LTP (₹)": close,
             "Change (%)": pct_chg,
-            "Today Volume": int(today_vol),
-            "Today Vol": format_volume_readable(today_vol),
-            "7D Avg Vol": format_volume_readable(v7),
-            "7D Avg Volume": int(v7),
-            "10D Avg Vol": format_volume_readable(v10),
-            "10D Avg Volume": int(v10),
-            "Vol Surge (7D)": surge_7d,
-            "Vol Surge (10D)": surge_10d,
-            "Volume Bar": build_volume_bar(surge_7d),
+            "Raw Today Volume": int(today_vol),
+            "Today's Volume": format_volume_with_tag(today_vol),
+            "7D Avg Volume": format_volume_with_tag(v7),
+            "10D Avg Volume": format_volume_with_tag(v10),
+            "Volume Surge (vs 7D)": f"{surge_7d:.2f}x",
+            "Vol Surge Num": surge_7d,
+            "Volume Intensity Bar": build_colorful_volume_bar(surge_7d),
             "Delivery (%)": deliv,
             "52W High (₹)": h52,
             "Dist 52W High (%)": dist_hi_pct,
@@ -417,19 +419,18 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
     near_high_cnt = len(fno_master[fno_master["Dist 52W High (%)"] >= -5.0])
     near_low_cnt = len(fno_master[fno_master["Dist 52W Low (%)"] <= 5.0])
     ban_cnt = len(ban_set)
-    vol_surge_cnt = len(fno_master[fno_master["Vol Surge (7D)"] >= 1.5])
+    vol_surge_cnt = len(fno_master[fno_master["Vol Surge Num"] >= 1.5])
     total_to_cr = fno_master["Turnover (₹Cr)"].sum()
-    total_vol_sum = fno_master["Today Volume"].sum()
 
     st.markdown("""
     <div class="sec-hdr blue" style="margin-top: 1.2rem; margin-bottom: 0.8rem;">
         <div class="title">📊 NSE F&O MARKET INTELLIGENCE TERMINAL</div>
         <div class="chips">
             <span class="chip" style="background: rgba(59,130,246,0.2); color: #60a5fa; border: 1px solid rgba(59,130,246,0.4);">
-                ⚡ Real-Time Derivatives
+                ⚡ Derivatives Suite
             </span>
             <span class="chip" style="background: rgba(16,185,129,0.2); color: #34d399; border: 1px solid rgba(16,185,129,0.4);">
-                📦 Today & 7D Volume Radar
+                📦 Today & 7D Volume
             </span>
             <span class="chip" style="background: rgba(239,68,68,0.2); color: #f87171; border: 1px solid rgba(239,68,68,0.4);">
                 🚫 Live NSE Ban Tracker
@@ -454,34 +455,42 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
         st.metric("Total F&O Turnover", f"₹{total_to_cr:,.1f} Cr")
 
     # -----------------------------------------------------------------------
-    # VOLUME RADAR SPOTLIGHT (REAL APP FEEL)
+    # VOLUME RADAR SPOTLIGHT
     # -----------------------------------------------------------------------
-    top_vol_stock = fno_master.sort_values("Today Volume", ascending=False).iloc[0] if not fno_master.empty else None
-    top_surge_stock = fno_master.sort_values("Vol Surge (7D)", ascending=False).iloc[0] if not fno_master.empty else None
-    top_deliv_stock = fno_master[fno_master["Today Volume"] > 500_000].sort_values("Delivery (%)", ascending=False).iloc[0] if not fno_master.empty else None
+    top_vol_stock = fno_master.sort_values("Raw Today Volume", ascending=False).iloc[0] if not fno_master.empty else None
+    top_surge_stock = fno_master.sort_values("Vol Surge Num", ascending=False).iloc[0] if not fno_master.empty else None
+    top_deliv_stock = fno_master[fno_master["Raw Today Volume"] > 500_000].sort_values("Delivery (%)", ascending=False).iloc[0] if not fno_master.empty else None
 
     if top_vol_stock is not None:
+        t_vol_sym = top_vol_stock['Symbol']
+        t_vol_val = top_vol_stock["Today's Volume"]
+        t_vol_to = top_vol_stock['Turnover']
+        t_surge_sym = top_surge_stock['Symbol']
+        t_surge_val = top_surge_stock['Volume Surge (vs 7D)']
+        t_deliv_sym = top_deliv_stock['Symbol']
+        t_deliv_val = top_deliv_stock['Delivery (%)']
+
         st.markdown(f"""
         <div style="display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0 18px 0;">
-            <div style="flex: 1; min-width: 260px; background: linear-gradient(135deg, rgba(59,130,246,0.12), rgba(30,58,138,0.25)); border: 1px solid rgba(59,130,246,0.35); border-radius: 10px; padding: 10px 14px;">
+            <div style="flex: 1; min-width: 260px; background: linear-gradient(135deg, rgba(59,130,246,0.15), rgba(30,58,138,0.3)); border: 1px solid rgba(59,130,246,0.4); border-radius: 10px; padding: 10px 14px;">
                 <div style="font-size: 0.72rem; color: #93c5fd; font-weight: 700; text-transform: uppercase;">👑 Most Traded Today</div>
                 <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px;">
-                    <span style="font-size: 1.15rem; font-weight: 800; color: #ffffff;">{top_vol_stock['Symbol']}</span>
-                    <span style="font-size: 0.95rem; font-weight: 700; color: #38bdf8;">{top_vol_stock['Today Vol']} shares ({top_vol_stock['Turnover']})</span>
+                    <span style="font-size: 1.15rem; font-weight: 800; color: #ffffff;">{t_vol_sym}</span>
+                    <span style="font-size: 0.92rem; font-weight: 700; color: #38bdf8;">{t_vol_val} ({t_vol_to})</span>
                 </div>
             </div>
-            <div style="flex: 1; min-width: 260px; background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(180,83,9,0.25)); border: 1px solid rgba(245,158,11,0.35); border-radius: 10px; padding: 10px 14px;">
+            <div style="flex: 1; min-width: 260px; background: linear-gradient(135deg, rgba(245,158,11,0.15), rgba(180,83,9,0.3)); border: 1px solid rgba(245,158,11,0.4); border-radius: 10px; padding: 10px 14px;">
                 <div style="font-size: 0.72rem; color: #fcd34d; font-weight: 700; text-transform: uppercase;">🔥 Highest 7D Volume Surge</div>
                 <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px;">
-                    <span style="font-size: 1.15rem; font-weight: 800; color: #ffffff;">{top_surge_stock['Symbol']}</span>
-                    <span style="font-size: 0.95rem; font-weight: 700; color: #fbbf24;">{top_surge_stock['Vol Surge (7D)']}x 7-Day Average</span>
+                    <span style="font-size: 1.15rem; font-weight: 800; color: #ffffff;">{t_surge_sym}</span>
+                    <span style="font-size: 0.92rem; font-weight: 700; color: #fbbf24;">{t_surge_val} 7-Day Average</span>
                 </div>
             </div>
-            <div style="flex: 1; min-width: 260px; background: linear-gradient(135deg, rgba(16,185,129,0.12), rgba(6,95,70,0.25)); border: 1px solid rgba(16,185,129,0.35); border-radius: 10px; padding: 10px 14px;">
+            <div style="flex: 1; min-width: 260px; background: linear-gradient(135deg, rgba(16,185,129,0.15), rgba(6,95,70,0.3)); border: 1px solid rgba(16,185,129,0.4); border-radius: 10px; padding: 10px 14px;">
                 <div style="font-size: 0.72rem; color: #6ee7b7; font-weight: 700; text-transform: uppercase;">💎 Institutional Delivery Leader</div>
                 <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px;">
-                    <span style="font-size: 1.15rem; font-weight: 800; color: #ffffff;">{top_deliv_stock['Symbol']}</span>
-                    <span style="font-size: 0.95rem; font-weight: 700; color: #34d399;">{top_deliv_stock['Delivery (%)']}% Delivery</span>
+                    <span style="font-size: 1.15rem; font-weight: 800; color: #ffffff;">{t_deliv_sym}</span>
+                    <span style="font-size: 0.92rem; font-weight: 700; color: #34d399;">{t_deliv_val}% Delivery</span>
                 </div>
             </div>
         </div>
@@ -505,7 +514,7 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
         if hi_df.empty:
             st.info("No F&O stocks currently within 5% of their 52-week high.")
         else:
-            disp_hi = hi_df[["Symbol", "LTP (₹)", "Change (%)", "52W High (₹)", "Dist 52W High (%)", "Today Vol", "7D Avg Vol", "Volume Bar", "Turnover"]]
+            disp_hi = hi_df[["Symbol", "LTP (₹)", "Change (%)", "52W High (₹)", "Dist 52W High (%)", "Today's Volume", "7D Avg Volume", "Volume Intensity Bar", "Turnover"]]
             st.dataframe(apply_colorful_terminal_styling(disp_hi), use_container_width=True, hide_index=True, height=280)
 
     with col_lo:
@@ -519,7 +528,7 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
         if lo_df.empty:
             st.info("No F&O stocks currently within 5% of their 52-week low.")
         else:
-            disp_lo = lo_df[["Symbol", "LTP (₹)", "Change (%)", "52W Low (₹)", "Dist 52W Low (%)", "Today Vol", "7D Avg Vol", "Volume Bar", "Turnover"]]
+            disp_lo = lo_df[["Symbol", "LTP (₹)", "Change (%)", "52W Low (₹)", "Dist 52W Low (%)", "Today's Volume", "7D Avg Volume", "Volume Intensity Bar", "Turnover"]]
             st.dataframe(apply_colorful_terminal_styling(disp_lo), use_container_width=True, hide_index=True, height=280)
 
     # F&O Ban Banner Section
@@ -535,22 +544,22 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
         st.success("✅ **Zero securities in F&O ban period.** All derivative contracts open for regular order routing.")
     else:
         st.warning(f"⚠️ **{len(banned_df)} Securities in Ban:** {', '.join(banned_df['Symbol'].tolist())}")
-        disp_ban = banned_df[["Symbol", "LTP (₹)", "Change (%)", "Today Vol", "7D Avg Vol", "Turnover", "Ban Status"]]
+        disp_ban = banned_df[["Symbol", "LTP (₹)", "Change (%)", "Today's Volume", "7D Avg Volume", "Turnover", "Ban Status"]]
         st.dataframe(apply_colorful_terminal_styling(disp_ban), use_container_width=True, hide_index=True, height=180)
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
     # -----------------------------------------------------------------------
-    # MASTER F&O STOCKS DIRECTORY (COLOURFUL, INTERACTIVE, ALL VOLUMES)
+    # MASTER F&O STOCKS DIRECTORY (COLOURFUL, EXPLICIT "TODAY'S VOLUME", NEVER WHITE)
     # -----------------------------------------------------------------------
     st.markdown("""
     <div class="sec-hdr blue" style="margin-bottom: 0.6rem;">
         <div class="title">📋 MASTER F&O STOCKS DIRECTORY</div>
         <div class="chips">
-            <span class="chip" style="background:rgba(59,130,246,0.15); color:#60a5fa;">Today Volume</span>
-            <span class="chip" style="background:rgba(16,185,129,0.15); color:#34d399;">7-Day Avg Vol</span>
-            <span class="chip" style="background:rgba(245,158,11,0.15); color:#fbbf24;">10-Day Avg Vol</span>
-            <span class="chip" style="background:rgba(139,92,246,0.15); color:#c084fc;">Surge Visual Bars</span>
+            <span class="chip" style="background:rgba(59,130,246,0.18); color:#60a5fa; border:1px solid rgba(59,130,246,0.35);">Today's Volume</span>
+            <span class="chip" style="background:rgba(16,185,129,0.18); color:#34d399; border:1px solid rgba(16,185,129,0.35);">7D Avg Volume</span>
+            <span class="chip" style="background:rgba(245,158,11,0.18); color:#fbbf24; border:1px solid rgba(245,158,11,0.35);">10D Avg Volume</span>
+            <span class="chip" style="background:rgba(139,92,246,0.18); color:#c084fc; border:1px solid rgba(139,92,246,0.35);">Colorful Volume Bars</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -591,9 +600,9 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
     elif quick_filter == "🚫 F&O Ban Only":
         filtered_df = filtered_df[filtered_df["Is Banned"] == True]
     elif quick_filter == "📊 High 7D Volume Surge (>1.5x)":
-        filtered_df = filtered_df[filtered_df["Vol Surge (7D)"] >= 1.5]
+        filtered_df = filtered_df[filtered_df["Vol Surge Num"] >= 1.5]
     elif quick_filter == "💥 Heavy 7D Volume Surge (>2.0x)":
-        filtered_df = filtered_df[filtered_df["Vol Surge (7D)"] >= 2.0]
+        filtered_df = filtered_df[filtered_df["Vol Surge Num"] >= 2.0]
     elif quick_filter == "💰 High Turnover (>₹250 Cr)":
         filtered_df = filtered_df[filtered_df["Turnover (₹Cr)"] >= 250.0]
     elif quick_filter == "📈 Top Gainers (>2%)":
@@ -606,16 +615,16 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
     if search_sym.strip():
         filtered_df = filtered_df[filtered_df["Symbol"].str.contains(search_sym.strip().upper(), case=False, na=False)]
 
-    # Comprehensive Display Columns
+    # Comprehensive Display Columns with explicit "Today's Volume"
     display_cols = [
         "Symbol",
         "LTP (₹)",
         "Change (%)",
-        "Today Vol",
-        "7D Avg Vol",
-        "10D Avg Vol",
-        "Vol Surge (7D)",
-        "Volume Bar",
+        "Today's Volume",
+        "7D Avg Volume",
+        "10D Avg Volume",
+        "Volume Surge (vs 7D)",
+        "Volume Intensity Bar",
         "Delivery (%)",
         "52W High (₹)",
         "Dist 52W High (%)",

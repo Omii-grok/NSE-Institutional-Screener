@@ -501,7 +501,7 @@ def fetch_avg_volumes(ref_date: datetime.date | None = None) -> tuple[pd.Series,
 # DATA PROCESSING
 # ─────────────────────────────────────────────────────────────
 DCOLS = ["SYMBOL","CLOSE_PRICE","PCT_CHANGE","TTL_TRD_QNTY","DELIV_PER"]
-DHDRS = ["Symbol","Close (₹)","Change (%)","Total Volume","Delivery (%)"]
+DHDRS = ["Symbol","Close (₹)","Change (%)","Today's Volume","Delivery (%)"]
 
 def _to_display(frame: pd.DataFrame) -> pd.DataFrame:
     out = frame[DCOLS].copy()
@@ -544,30 +544,34 @@ def build_fno_tracker(raw: pd.DataFrame) -> pd.DataFrame:
 def _build_vol_bar(ratio: float) -> str:
     try:
         r = float(ratio)
-        if r <= 0: return "░░░░░░░░░░ 0.0x"
-        filled = min(10, max(1, int(r * 4)))
-        bar = "█" * filled + "░" * (10 - filled)
-        if r >= 2.0: return f"🔥 {bar} {r:.2f}x"
-        elif r >= 1.2: return f"⚡ {bar} {r:.2f}x"
-        return f"📊 {bar} {r:.2f}x"
+        if r <= 0: return "🟪 0.00x"
+        if r >= 2.5: return f"🔥 🟧🟧🟧🟧🟧 {r:.2f}x"
+        elif r >= 2.0: return f"🔥 🟧🟧🟧🟧 {r:.2f}x"
+        elif r >= 1.5: return f"⚡ 🟩🟩🟩 {r:.2f}x"
+        elif r >= 1.0: return f"⚡ 🟩🟩 {r:.2f}x"
+        elif r >= 0.7: return f"📊 🟦🟦 {r:.2f}x"
+        return f"💤 🟪 {r:.2f}x"
     except Exception:
-        return "░░░░░░░░░░"
+        return "🟪 0.00x"
 
 def _merge_avg_vol(df: pd.DataFrame, avg7: pd.Series, avg10: pd.Series) -> pd.DataFrame:
     df = df.copy()
+    vol_col = "Today's Volume" if "Today's Volume" in df.columns else ("Total Volume" if "Total Volume" in df.columns else None)
+    raw_vol = df[vol_col] if vol_col else pd.Series(dtype=float)
+
     if not avg7.empty:
-        df["7D Avg Vol"] = df["Symbol"].map(avg7).fillna(df["Total Volume"]).astype(int)
+        df["7D Avg Vol"] = df["Symbol"].map(avg7).fillna(raw_vol).astype(int)
     else:
-        df["7D Avg Vol"] = df["Total Volume"]
+        df["7D Avg Vol"] = raw_vol.astype(int) if vol_col else 0
 
     if not avg10.empty:
-        df["10D Avg Vol"] = df["Symbol"].map(avg10).fillna(df["Total Volume"]).astype(int)
+        df["10D Avg Vol"] = df["Symbol"].map(avg10).fillna(raw_vol).astype(int)
     else:
-        df["10D Avg Vol"] = df["Total Volume"]
+        df["10D Avg Vol"] = raw_vol.astype(int) if vol_col else 0
 
     denom7 = df["7D Avg Vol"].replace(0, float("nan"))
-    df["Vol Surge (7D)"] = (df["Total Volume"] / denom7).round(2).fillna(1.0)
-    df["Volume Bar"] = df["Vol Surge (7D)"].apply(_build_vol_bar)
+    df["Vol Surge (7D)"] = (raw_vol / denom7).round(2).fillna(1.0) if vol_col else 1.0
+    df["Volume Intensity Bar"] = df["Vol Surge (7D)"].apply(_build_vol_bar)
     return df
 
 # ─────────────────────────────────────────────────────────────
@@ -595,29 +599,41 @@ def _clr_del(v):
 def _clr_surge(v):
     try:
         f = float(v)
-        if f >= 2.0: return "color:#fb923c;font-weight:800;background-color:rgba(251,146,60,0.15);"
-        if f >= 1.2: return "color:#38bdf8;font-weight:700;"
+        if f >= 2.0: return "color:#fb923c;font-weight:800;background-color:rgba(251,146,60,0.18);border-radius:4px;"
+        if f >= 1.2: return "color:#38bdf8;font-weight:700;background-color:rgba(56,189,248,0.10);border-radius:4px;"
         return "color:#94a3b8;"
     except Exception:
         return ""
 
+def _clr_vol_bar_cell(val):
+    s = str(val)
+    if "🔥" in s or "🟧" in s:
+        return "background-color: rgba(249, 115, 22, 0.22); color: #fb923c; font-weight: 800; border-radius: 6px;"
+    elif "⚡" in s or "🟩" in s:
+        return "background-color: rgba(16, 185, 129, 0.20); color: #34d399; font-weight: 700; border-radius: 6px;"
+    elif "🟦" in s:
+        return "background-color: rgba(59, 130, 246, 0.18); color: #60a5fa; font-weight: 600; border-radius: 6px;"
+    return "background-color: rgba(148, 163, 184, 0.12); color: #cbd5e1; border-radius: 6px;"
+
 def styled(df: pd.DataFrame):
     s = df.style
-    if "Change (%)"     in df.columns: s = s.map(_clr_chg, subset=["Change (%)"])
-    if "Delivery (%)"   in df.columns: s = s.map(_clr_del, subset=["Delivery (%)"])
-    if "Vol Surge (7D)" in df.columns: s = s.map(_clr_surge, subset=["Vol Surge (7D)"])
+    if "Change (%)"            in df.columns: s = s.map(_clr_chg, subset=["Change (%)"])
+    if "Delivery (%)"          in df.columns: s = s.map(_clr_del, subset=["Delivery (%)"])
+    if "Vol Surge (7D)"        in df.columns: s = s.map(_clr_surge, subset=["Vol Surge (7D)"])
+    if "Volume Intensity Bar"  in df.columns: s = s.map(_clr_vol_bar_cell, subset=["Volume Intensity Bar"])
     return s
 
 _CFG = {
-    "Symbol":         st.column_config.TextColumn("Symbol"),
-    "Close (₹)":     st.column_config.NumberColumn("Close (₹)",     format="₹%.2f"),
-    "Change (%)":    st.column_config.NumberColumn("Change (%)",    format="%.2f%%"),
-    "Total Volume":  st.column_config.NumberColumn("Today Volume",  format="%d"),
-    "7D Avg Vol":    st.column_config.NumberColumn("7D Avg Vol",    format="%d", help="Average daily volume over last 7 trading days"),
-    "10D Avg Vol":   st.column_config.NumberColumn("10D Avg Vol",   format="%d", help="Average daily volume over last 10 trading days"),
-    "Vol Surge (7D)":st.column_config.NumberColumn("Surge vs 7D",  format="%.2fx", help="Today Volume / 7-Day Average Volume"),
-    "Volume Bar":    st.column_config.TextColumn("Volume Intensity", help="Visual volume surge indicator"),
-    "Delivery (%)":  st.column_config.NumberColumn("Delivery (%)",  format="%.2f%%"),
+    "Symbol":               st.column_config.TextColumn("Symbol"),
+    "Close (₹)":           st.column_config.NumberColumn("Close (₹)",           format="₹%.2f"),
+    "Change (%)":          st.column_config.NumberColumn("Change (%)",          format="%.2f%%"),
+    "Today's Volume":      st.column_config.NumberColumn("Today's Volume",      format="%d", help="Total traded quantity today"),
+    "Total Volume":        st.column_config.NumberColumn("Today's Volume",      format="%d", help="Total traded quantity today"),
+    "7D Avg Vol":          st.column_config.NumberColumn("7D Avg Vol",          format="%d", help="Average daily volume over last 7 trading days"),
+    "10D Avg Vol":         st.column_config.NumberColumn("10D Avg Vol",         format="%d", help="Average daily volume over last 10 trading days"),
+    "Vol Surge (7D)":      st.column_config.NumberColumn("Surge vs 7D",        format="%.2fx", help="Today Volume / 7-Day Average Volume"),
+    "Volume Intensity Bar":st.column_config.TextColumn("Volume Intensity",      help="Visual colorful volume surge indicator"),
+    "Delivery (%)":        st.column_config.NumberColumn("Delivery (%)",        format="%.2f%%"),
 }
 
 # ─────────────────────────────────────────────────────────────
