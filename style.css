@@ -114,3 +114,38 @@ section[data-testid='stSidebar'] {
     padding-top: 1rem;
 }
 section[data-testid='stSidebar'] > div:first-child { padding: 1.2rem 1rem 2rem; }
+
+
+/* Date Pill & Action Badges */
+.date-pill {
+    background: rgba(59, 130, 246, 0.12) !important;
+    border: 1px solid rgba(59, 130, 246, 0.35) !important;
+    color: #60a5fa !important;
+    padding: 0.35rem 0.85rem !important;
+    border-radius: 9999px !important;
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    box-shadow: 0 0 15px rgba(59, 130, 246, 0.18) !important;
+}
+
+/* Date input styling */
+div[data-testid='stDateInput'] {
+    background: rgba(255, 255, 255, 0.02) !important;
+    border-radius: 8px !important;
+    padding: 4px !important;
+}
+
+div[data-testid='stDateInput'] input {
+    background-color: #0d1527 !important;
+    color: #f1f5f9 !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    border-radius: 6px !important;
+    font-weight: 500 !important;
+}
+
+div[data-testid='stDateInput'] input:focus {
+    border-color: #3b82f6 !important;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25) !important;
+}

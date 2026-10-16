@@ -1,3 +1,5 @@
+import os
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
 """
 NSE EOD Institutional Screener — v3.0 Pro Trading Terminal
 ===========================================================
@@ -26,6 +28,13 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# Load external CSS for institutional styling if present
+_css_p = pathlib.Path(__file__).parent / "style.css"
+if _css_p.exists():
+    with open(_css_p, "r", encoding="utf-8") as _f:
+        st.markdown(f"<style>{_f.read()}</style>", unsafe_allow_html=True)
+
 
 # ─────────────────────────────────────────────────────────────
 # SESSION STATE — tracks which section is active
@@ -373,19 +382,63 @@ def _fetch_one_date(session: requests.Session, d: datetime.date) -> pd.DataFrame
     return None
 
 
-@st.cache_data(ttl=86_400, show_spinner=False)
-def fetch_nse_data() -> tuple[pd.DataFrame, datetime.date]:
-    base    = last_trading_day()
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_nse_data(target_date: datetime.date | None = None) -> tuple[pd.DataFrame, datetime.date]:
     session = requests.Session()
     try:
         session.get("https://www.nseindia.com", headers=NSE_HEADERS, timeout=10)
     except Exception:
         pass
+
+    # If user selected a specific target date
+    if target_date is not None:
+        file_str = target_date.strftime("%Y_%m_%d")
+        for base_p in [pathlib.Path("data"), pathlib.Path(__file__).parent / "data", pathlib.Path(".")]:
+            p = base_p / f"bhavcopy_{file_str}.csv"
+            if p.exists() and p.stat().st_size > 10_000:
+                try:
+                    df = pd.read_csv(p, skipinitialspace=True)
+                    df.columns = df.columns.str.strip()
+                    return df, target_date
+                except Exception:
+                    pass
+
+        # Try downloading directly from NSE Archives
+        df = _fetch_one_date(session, target_date)
+        if df is not None:
+            try:
+                os.makedirs("data", exist_ok=True)
+                df.to_csv(pathlib.Path("data") / f"bhavcopy_{file_str}.csv", index=False)
+                df.to_csv("sec_bhavdata_full.csv", index=False)
+            except Exception:
+                pass
+            return df, target_date
+
+        raise ValueError(f"No data available for {target_date.strftime('%d-%b-%Y')}. It may be a weekend, market holiday, or not yet published by NSE.")
+
+    # Otherwise fallback to finding the latest available trading day
+    base = last_trading_day()
     checked, candidate = 0, base
     while checked < 7:
         if is_trading_day(candidate):
+            file_str = candidate.strftime("%Y_%m_%d")
+            for base_p in [pathlib.Path("data"), pathlib.Path(__file__).parent / "data", pathlib.Path(".")]:
+                p = base_p / f"bhavcopy_{file_str}.csv"
+                if p.exists() and p.stat().st_size > 10_000:
+                    try:
+                        df = pd.read_csv(p, skipinitialspace=True)
+                        df.columns = df.columns.str.strip()
+                        return df, candidate
+                    except Exception:
+                        pass
             df = _fetch_one_date(session, candidate)
             if df is not None:
+                try:
+                    os.makedirs("data", exist_ok=True)
+                    df.to_csv(pathlib.Path("data") / f"bhavcopy_{file_str}.csv", index=False)
+                    df.to_csv("sec_bhavdata_full.csv", index=False)
+                except Exception:
+                    pass
                 return df, candidate
             checked += 1
         candidate -= datetime.timedelta(days=1)
@@ -404,8 +457,8 @@ def fetch_nse_data() -> tuple[pd.DataFrame, datetime.date]:
 
 
 @st.cache_data(ttl=86_400, show_spinner=False)
-def fetch_10day_avg_volume() -> pd.Series:
-    base    = last_trading_day()
+def fetch_10day_avg_volume(ref_date: datetime.date | None = None) -> pd.Series:
+    base = ref_date or last_trading_day()
     session = requests.Session()
     try:
         session.get("https://www.nseindia.com", headers=NSE_HEADERS, timeout=10)
@@ -416,9 +469,22 @@ def fetch_10day_avg_volume() -> pd.Series:
     while collected < 10 and attempts < 25:
         attempts += 1
         if is_trading_day(candidate):
-            df = _fetch_one_date(session, candidate)
-            if df is not None and "SERIES" in df.columns:
-                eq = df[df["SERIES"].str.strip() == "EQ"][["SYMBOL","TTL_TRD_QNTY"]].copy()
+            file_str = candidate.strftime("%Y_%m_%d")
+            found_df = None
+            for base_p in [pathlib.Path("data"), pathlib.Path(__file__).parent / "data", pathlib.Path(".")]:
+                p = base_p / f"bhavcopy_{file_str}.csv"
+                if p.exists() and p.stat().st_size > 10_000:
+                    try:
+                        found_df = pd.read_csv(p, skipinitialspace=True)
+                        found_df.columns = found_df.columns.str.strip()
+                        break
+                    except Exception:
+                        pass
+            if found_df is None:
+                found_df = _fetch_one_date(session, candidate)
+
+            if found_df is not None and "SERIES" in found_df.columns:
+                eq = found_df[found_df["SERIES"].str.strip() == "EQ"][["SYMBOL", "TTL_TRD_QNTY"]].copy()
                 eq["TTL_TRD_QNTY"] = pd.to_numeric(eq["TTL_TRD_QNTY"], errors="coerce")
                 frames.append(eq)
                 collected += 1
@@ -546,6 +612,8 @@ def render_section(icon, title, chips, color, df, empty_msg, height=420):
 def main():
 
     # ── SIDEBAR ──────────────────────────────────────────────
+    target_date = st.session_state.get("target_date", None)
+
     with st.sidebar:
         st.markdown("""
         <div class="sb-logo">
@@ -592,9 +660,12 @@ def main():
         """, unsafe_allow_html=True)
 
     # ── DATA LOADING ─────────────────────────────────────────
-    with st.spinner("⏳ Fetching NSE EOD data…"):
+    with st.spinner("⏳ Fetching NSE EOD data..."):
         try:
-            raw_df, trade_date = fetch_nse_data()
+            raw_df, trade_date = fetch_nse_data(target_date)
+        except ValueError as e:
+            st.warning(f"⚠️ {e} - Showing latest available trading session instead.")
+            raw_df, trade_date = fetch_nse_data(None)
         except ConnectionError as e:
             st.error(str(e)); st.stop()
         except Exception as e:
@@ -604,7 +675,7 @@ def main():
     fno_df                    = build_fno_tracker(raw_df)
 
     with st.spinner("📊 Loading 10-day average volume…"):
-        try:   avg_vol = fetch_10day_avg_volume()
+        try:   avg_vol = fetch_10day_avg_volume(trade_date)
         except Exception: avg_vol = pd.Series(dtype=float)
 
     hni_df  = _merge_avg_vol(hni_df,  avg_vol)
@@ -626,13 +697,24 @@ def main():
     with hc2:
         st.markdown(f"""
         <div style="height:100%;display:flex;flex-direction:column;
-                    justify-content:center;align-items:flex-end;gap:8px;padding-right:4px">
+                    justify-content:center;align-items:flex-end;gap:6px;padding-right:4px">
             <div class="date-pill">📅 &nbsp;{trade_date.strftime('%d %b %Y')}</div>
-            <div style="font-size:0.68rem;color:#334155;
+            <div style="font-size:0.68rem;color:#94a3b8;
                         font-family:'JetBrains Mono',monospace">
                 Refreshed {ist_now.strftime('%H:%M IST')}
             </div>
         </div>""", unsafe_allow_html=True)
+        col_r1, col_r2 = st.columns([1, 1])
+        with col_r1:
+            if st.button("🔄 Refresh", key="hdr_refresh_today", help="Clear cache and fetch today's latest NSE file"):
+                st.cache_data.clear()
+                st.session_state["target_date"] = datetime.datetime.now(IST).date()
+                st.rerun()
+        with col_r2:
+            if target_date is not None:
+                if st.button("⚡ Latest", key="hdr_latest_reset", help="Reset to latest trading day"):
+                    st.session_state["target_date"] = None
+                    st.rerun()
 
     # ── CLICKABLE METRIC NAV CARDS ───────────────────────────
     # Each button is styled as a metric card via CSS (nth-child targeting).
@@ -765,6 +847,13 @@ def main():
             "",
             height=560,
         ) if False else None   # skip — F&O needs search box, handle manually
+
+        # Integrated F&O Dashboard Analytics
+        try:
+            import fno_dashboard
+            fno_dashboard.render_fno_dashboard(fno_df)
+        except Exception as e:
+            pass
 
         # F&O section header
         chips_h = "".join(
