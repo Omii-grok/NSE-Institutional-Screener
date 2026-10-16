@@ -851,7 +851,7 @@ def main():
         # Integrated F&O Dashboard Analytics
         try:
             import fno_dashboard
-            fno_dashboard.render_fno_dashboard(fno_df)
+            fno_dashboard.render_fno_dashboard(raw_df, trade_date)
         except Exception as e:
             pass
 
