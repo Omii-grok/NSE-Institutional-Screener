@@ -694,7 +694,21 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
-    # ── DATA LOADING ─────────────────────────────────────────
+        # ── DATA LOADING ──────────────────────────────────────────────────────────
+    with st.spinner("⏳ Fetching NSE EOD data..."):
+        try:
+            raw_df, trade_date = fetch_nse_data(target_date)
+        except ValueError as e:
+            st.warning(f"⚠️ {e} - Showing latest available trading session instead.")
+            raw_df, trade_date = fetch_nse_data(None)
+        except ConnectionError as e:
+            st.error(str(e)); st.stop()
+        except Exception as e:
+            st.error(f"Unexpected error: {e}"); st.stop()
+
+    hni_df, pure_df, total_eq = process_data(raw_df)
+    fno_df                    = build_fno_tracker(raw_df)
+
     with st.spinner("📊 Loading 7-day & 10-day volume models..."):
         try:   avg7, avg10 = fetch_avg_volumes(trade_date)
         except Exception: avg7, avg10 = pd.Series(dtype=float), pd.Series(dtype=float)
