@@ -149,3 +149,67 @@ div[data-testid='stDateInput'] input:focus {
     border-color: #3b82f6 !important;
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25) !important;
 }
+
+
+/* Pro Trading Terminal Colorful UI Enhancements */
+div[data-testid='stDataFrame'] {
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 10px !important;
+    background: #090e1c !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Custom modern scrollbars */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #07091a;
+}
+::-webkit-scrollbar-thumb {
+    background: #1e293b;
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #3b82f6;
+}
+
+/* Vibrant KPI Metric Cards */
+div[data-testid='stMetric'] {
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 10px !important;
+    padding: 12px 14px !important;
+    transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+}
+div[data-testid='stMetric']:hover {
+    transform: translateY(-2px) !important;
+    border-color: rgba(59, 130, 246, 0.4) !important;
+    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.15) !important;
+}
+
+/* Filter selectbox and search input */
+div[data-testid='stSelectbox'] div[data-baseweb='select'] > div {
+    background-color: #0d1527 !important;
+    border: 1px solid rgba(59, 130, 246, 0.3) !important;
+    border-radius: 8px !important;
+    color: #f1f5f9 !important;
+    font-weight: 600 !important;
+}
+div[data-testid='stTextInput'] input {
+    background-color: #0d1527 !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    border-radius: 8px !important;
+    color: #f1f5f9 !important;
+}
+div[data-testid='stTextInput'] input:focus {
+    border-color: #3b82f6 !important;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25) !important;
+}
+
+/* Colorful Section Headers */
+.sec-hdr.gold .title { color: #f59e0b !important; text-shadow: 0 0 10px rgba(245, 158, 11, 0.3); }
+.sec-hdr.red .title { color: #f87171 !important; text-shadow: 0 0 10px rgba(248, 113, 113, 0.3); }
+.sec-hdr.blue .title { color: #60a5fa !important; text-shadow: 0 0 10px rgba(96, 165, 250, 0.3); }
+.sec-hdr.violet .title { color: #c084fc !important; text-shadow: 0 0 10px rgba(192, 132, 252, 0.3); }

@@ -11,6 +11,7 @@ NSE EOD Institutional Screener — v3.0 Pro Trading Terminal
 """
 
 import io
+import glob
 import datetime
 import pathlib
 import requests
@@ -456,45 +457,45 @@ def fetch_nse_data(target_date: datetime.date | None = None) -> tuple[pd.DataFra
     )
 
 
-@st.cache_data(ttl=86_400, show_spinner=False)
-def fetch_10day_avg_volume(ref_date: datetime.date | None = None) -> pd.Series:
-    base = ref_date or last_trading_day()
-    session = requests.Session()
-    try:
-        session.get("https://www.nseindia.com", headers=NSE_HEADERS, timeout=10)
-    except Exception:
-        pass
-    frames: list[pd.DataFrame] = []
-    collected, candidate, attempts = 0, base, 0
-    while collected < 10 and attempts < 25:
-        attempts += 1
-        if is_trading_day(candidate):
-            file_str = candidate.strftime("%Y_%m_%d")
-            found_df = None
-            for base_p in [pathlib.Path("data"), pathlib.Path(__file__).parent / "data", pathlib.Path(".")]:
-                p = base_p / f"bhavcopy_{file_str}.csv"
-                if p.exists() and p.stat().st_size > 10_000:
-                    try:
-                        found_df = pd.read_csv(p, skipinitialspace=True)
-                        found_df.columns = found_df.columns.str.strip()
-                        break
-                    except Exception:
-                        pass
-            if found_df is None:
-                found_df = _fetch_one_date(session, candidate)
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_avg_volumes(ref_date: datetime.date | None = None) -> tuple[pd.Series, pd.Series]:
+    """Fetch 7-day and 10-day average daily traded volumes from historical bhavcopies."""
+    data_dirs = [pathlib.Path("data"), pathlib.Path(__file__).parent / "data", pathlib.Path(".")]
+    csv_files = []
+    for d in data_dirs:
+        if d.exists():
+            found = sorted(glob.glob(str(d / "bhavcopy_*.csv")))
+            if found:
+                if ref_date:
+                    ref_str = ref_date.strftime("%Y_%m_%d")
+                    found = [f for f in found if os.path.basename(f) <= f"bhavcopy_{ref_str}.csv"]
+                csv_files = found
+                break
 
-            if found_df is not None and "SERIES" in found_df.columns:
-                eq = found_df[found_df["SERIES"].str.strip() == "EQ"][["SYMBOL", "TTL_TRD_QNTY"]].copy()
+    if not csv_files:
+        return pd.Series(dtype=float, name="AVG_VOL_7D"), pd.Series(dtype=float, name="AVG_VOL_10D")
+
+    last7 = csv_files[-7:]
+    last10 = csv_files[-10:]
+    f7, f10 = [], []
+    for f in last10:
+        try:
+            df = pd.read_csv(f, skipinitialspace=True)
+            df.columns = df.columns.str.strip()
+            if "SERIES" in df.columns:
+                eq = df[df["SERIES"].str.strip() == "EQ"][["SYMBOL", "TTL_TRD_QNTY"]].copy()
                 eq["TTL_TRD_QNTY"] = pd.to_numeric(eq["TTL_TRD_QNTY"], errors="coerce")
-                frames.append(eq)
-                collected += 1
-        candidate -= datetime.timedelta(days=1)
-    if not frames:
-        return pd.Series(dtype=float, name="AVG_VOL_10D")
-    combined = pd.concat(frames, ignore_index=True)
-    avg = combined.groupby("SYMBOL")["TTL_TRD_QNTY"].mean().round(0)
-    avg.name = "AVG_VOL_10D"
-    return avg
+                if f in last7:
+                    f7.append(eq)
+                f10.append(eq)
+        except Exception:
+            pass
+
+    s7 = pd.concat(f7, ignore_index=True).groupby("SYMBOL")["TTL_TRD_QNTY"].mean().round(0) if f7 else pd.Series(dtype=float)
+    s10 = pd.concat(f10, ignore_index=True).groupby("SYMBOL")["TTL_TRD_QNTY"].mean().round(0) if f10 else pd.Series(dtype=float)
+    s7.name = "AVG_VOL_7D"
+    s10.name = "AVG_VOL_10D"
+    return s7, s10
 
 # ─────────────────────────────────────────────────────────────
 # DATA PROCESSING
@@ -540,11 +541,33 @@ def build_fno_tracker(raw: pd.DataFrame) -> pd.DataFrame:
         fno["PCT_CHANGE"] = (fno["CLOSE_PRICE"]-fno["PREV_CLOSE"])/fno["PREV_CLOSE"]*100
     return _to_display(fno.sort_values("PCT_CHANGE", ascending=False))
 
-def _merge_avg_vol(df: pd.DataFrame, avg: pd.Series) -> pd.DataFrame:
+def _build_vol_bar(ratio: float) -> str:
+    try:
+        r = float(ratio)
+        if r <= 0: return "░░░░░░░░░░ 0.0x"
+        filled = min(10, max(1, int(r * 4)))
+        bar = "█" * filled + "░" * (10 - filled)
+        if r >= 2.0: return f"🔥 {bar} {r:.2f}x"
+        elif r >= 1.2: return f"⚡ {bar} {r:.2f}x"
+        return f"📊 {bar} {r:.2f}x"
+    except Exception:
+        return "░░░░░░░░░░"
+
+def _merge_avg_vol(df: pd.DataFrame, avg7: pd.Series, avg10: pd.Series) -> pd.DataFrame:
     df = df.copy()
-    if not avg.empty:
-        idx = df.columns.get_loc("Total Volume") + 1
-        df.insert(idx, "Avg Vol (10D)", df["Symbol"].map(avg).round(0))
+    if not avg7.empty:
+        df["7D Avg Vol"] = df["Symbol"].map(avg7).fillna(df["Total Volume"]).astype(int)
+    else:
+        df["7D Avg Vol"] = df["Total Volume"]
+
+    if not avg10.empty:
+        df["10D Avg Vol"] = df["Symbol"].map(avg10).fillna(df["Total Volume"]).astype(int)
+    else:
+        df["10D Avg Vol"] = df["Total Volume"]
+
+    denom7 = df["7D Avg Vol"].replace(0, float("nan"))
+    df["Vol Surge (7D)"] = (df["Total Volume"] / denom7).round(2).fillna(1.0)
+    df["Volume Bar"] = df["Vol Surge (7D)"].apply(_build_vol_bar)
     return df
 
 # ─────────────────────────────────────────────────────────────
@@ -569,20 +592,32 @@ def _clr_del(v):
     if f >= 50:  return "color:#fbbf24;font-weight:600"
     return "color:#f87171;font-weight:500"
 
+def _clr_surge(v):
+    try:
+        f = float(v)
+        if f >= 2.0: return "color:#fb923c;font-weight:800;background-color:rgba(251,146,60,0.15);"
+        if f >= 1.2: return "color:#38bdf8;font-weight:700;"
+        return "color:#94a3b8;"
+    except Exception:
+        return ""
+
 def styled(df: pd.DataFrame):
     s = df.style
-    if "Change (%)"   in df.columns: s = s.map(_clr_chg, subset=["Change (%)"])
-    if "Delivery (%)" in df.columns: s = s.map(_clr_del, subset=["Delivery (%)"])
+    if "Change (%)"     in df.columns: s = s.map(_clr_chg, subset=["Change (%)"])
+    if "Delivery (%)"   in df.columns: s = s.map(_clr_del, subset=["Delivery (%)"])
+    if "Vol Surge (7D)" in df.columns: s = s.map(_clr_surge, subset=["Vol Surge (7D)"])
     return s
 
 _CFG = {
-    "Symbol":        st.column_config.TextColumn("Symbol"),
-    "Close (₹)":    st.column_config.NumberColumn("Close (₹)",    format="₹%.2f"),
-    "Change (%)":   st.column_config.NumberColumn("Change (%)",   format="%.2f%%"),
-    "Total Volume": st.column_config.NumberColumn("Volume",       format="%d"),
-    "Avg Vol (10D)":st.column_config.NumberColumn("Avg Vol 10D",  format="%d",
-                        help="Average daily volume over last 10 sessions"),
-    "Delivery (%)": st.column_config.NumberColumn("Delivery (%)", format="%.2f%%"),
+    "Symbol":         st.column_config.TextColumn("Symbol"),
+    "Close (₹)":     st.column_config.NumberColumn("Close (₹)",     format="₹%.2f"),
+    "Change (%)":    st.column_config.NumberColumn("Change (%)",    format="%.2f%%"),
+    "Total Volume":  st.column_config.NumberColumn("Today Volume",  format="%d"),
+    "7D Avg Vol":    st.column_config.NumberColumn("7D Avg Vol",    format="%d", help="Average daily volume over last 7 trading days"),
+    "10D Avg Vol":   st.column_config.NumberColumn("10D Avg Vol",   format="%d", help="Average daily volume over last 10 trading days"),
+    "Vol Surge (7D)":st.column_config.NumberColumn("Surge vs 7D",  format="%.2fx", help="Today Volume / 7-Day Average Volume"),
+    "Volume Bar":    st.column_config.TextColumn("Volume Intensity", help="Visual volume surge indicator"),
+    "Delivery (%)":  st.column_config.NumberColumn("Delivery (%)",  format="%.2f%%"),
 }
 
 # ─────────────────────────────────────────────────────────────
@@ -660,27 +695,13 @@ def main():
         """, unsafe_allow_html=True)
 
     # ── DATA LOADING ─────────────────────────────────────────
-    with st.spinner("⏳ Fetching NSE EOD data..."):
-        try:
-            raw_df, trade_date = fetch_nse_data(target_date)
-        except ValueError as e:
-            st.warning(f"⚠️ {e} - Showing latest available trading session instead.")
-            raw_df, trade_date = fetch_nse_data(None)
-        except ConnectionError as e:
-            st.error(str(e)); st.stop()
-        except Exception as e:
-            st.error(f"Unexpected error: {e}"); st.stop()
+    with st.spinner("📊 Loading 7-day & 10-day volume models..."):
+        try:   avg7, avg10 = fetch_avg_volumes(trade_date)
+        except Exception: avg7, avg10 = pd.Series(dtype=float), pd.Series(dtype=float)
 
-    hni_df, pure_df, total_eq = process_data(raw_df)
-    fno_df                    = build_fno_tracker(raw_df)
-
-    with st.spinner("📊 Loading 10-day average volume…"):
-        try:   avg_vol = fetch_10day_avg_volume(trade_date)
-        except Exception: avg_vol = pd.Series(dtype=float)
-
-    hni_df  = _merge_avg_vol(hni_df,  avg_vol)
-    pure_df = _merge_avg_vol(pure_df, avg_vol)
-    fno_df  = _merge_avg_vol(fno_df,  avg_vol)
+    hni_df  = _merge_avg_vol(hni_df,  avg7, avg10)
+    pure_df = _merge_avg_vol(pure_df, avg7, avg10)
+    fno_df  = _merge_avg_vol(fno_df,  avg7, avg10)
 
     ist_now = datetime.datetime.now(IST)
 
