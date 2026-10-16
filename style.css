@@ -1,0 +1,116 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+/* Global */
+html, body, [class*='css'] {
+    font-family: 'Inter', -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background-color: #07091a; /* fallback */
+    color: #e2e8f0;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+#MainMenu, footer, header { visibility: hidden; }
+.block-container {
+    padding: 1.5rem 2rem 3rem !important;
+    max-width: 1440px;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    transition: padding 0.3s ease;
+}
+@media (max-width: 768px) {
+    .block-container { padding: 1rem !important; }
+}
+
+/* Header */
+.hdr {
+    text-align: center;
+    margin-bottom: 2rem;
+    color: #f8fafc;
+    animation: fadeIn 0.8s ease forwards;
+    opacity: 0;
+}
+.hdr h1 {
+    font-size: 2.5rem;
+    font-weight: 800;
+    margin: 0;
+}
+.hdr p {
+    color: #94a3b8;
+    font-size: 1.1rem;
+    margin-top: 0.4rem;
+}
+
+/* Sidebar branding */
+.sb-logo {
+    text-align: center;
+    margin-bottom: 1.5rem;
+    color: #f8fafc;
+    animation: fadeIn 0.9s ease forwards;
+    opacity: 0;
+}
+.sb-logo .ic {
+    font-size: 2.5rem;
+    margin-bottom: 0.3rem;
+}
+.sb-logo h2 {
+    font-size: 1.8rem;
+    margin: 0.3rem 0;
+}
+.sb-logo small {
+    color: #94a3b8;
+    font-size: 0.9rem;
+}
+
+/* Buttons */
+.stButton > button {
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    color: #fff;
+    border: none;
+    border-radius: 0.5rem;
+    padding: 0.6rem 1.2rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.stButton > button:hover {
+    transform: scale(1.03);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+/* Metrics cards */
+.stMetric {
+    background: rgba(255,255,255,0.05);
+    border-radius: 0.5rem;
+    padding: 0.8rem;
+    transition: background 0.2s;
+}
+.stMetric:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+/* DataFrames / Tables */
+.stDataFrame {
+    border-radius: 0.5rem;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Fade-in animation */
+@keyframes fadeIn {
+    to { opacity: 1; }
+}
+
+/* Background */
+.stApp {
+    background:
+        radial-gradient(ellipse 60% 35% at 15% 0%, rgba(59,130,246,0.07) 0%, transparent 65%),
+        radial-gradient(ellipse 50% 30% at 85% 0%, rgba(139,92,246,0.06) 0%, transparent 65%),
+        #07091a;
+}
+
+/* Sidebar */
+section[data-testid='stSidebar'] {
+    background: linear-gradient(180deg, #0c1226 0%, #090e1c 100%) !important;
+    border-right: 1px solid rgba(255,255,255,0.06) !important;
+    padding-top: 1rem;
+}
+section[data-testid='stSidebar'] > div:first-child { padding: 1.2rem 1rem 2rem; }
