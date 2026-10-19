@@ -4,8 +4,9 @@ NSE F&O Market Intelligence Dashboard - Pro Terminal Edition
 ============================================================
 Featuring:
 - Vibrant, colorful trading terminal UI
+- Top intensity volume bar in VIBRANT NEON GREEN (🚀 🟩🟩🟩🟩🟩)
+- Clean decimal rounding (2 decimals max, zero unnecessary trailing zeros)
 - Explicit "Today's Volume", "7D Avg Volume", and "10D Avg Volume"
-- Glowing, colorful Volume Intensity Bars (never white)
 - 52-Week High & Low tracking
 - Turnover in Crores (₹Cr)
 - Official NSE F&O Ban detection
@@ -18,44 +19,31 @@ import datetime
 import requests
 import pandas as pd
 import streamlit as st
+import market_universe as mu
 
 # Configure OpenBLAS thread safety
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
-# Official NSE F&O universe base
-DEFAULT_FNO_SYMBOLS: list[str] = [
-    "AARTIIND","ABB","ABBOTINDIA","ABCAPITAL","ABFRL","ACC","ADANIENT",
-    "ADANIPORTS","ALKEM","AMBUJACEM","ANGELONE","APLAPOLLO","APOLLOHOSP",
-    "APOLLOTYRE","ASHOKLEY","ASIANPAINT","ASTRAL","ATUL","AUBANK",
-    "AUROPHARMA","AXISBANK","BAJAJ-AUTO","BAJAJFINSV","BAJFINANCE",
-    "BALKRISIND","BANDHANBNK","BANKBARODA","BATAINDIA","BEL","BERGEPAINT",
-    "BHARATFORG","BHARTIARTL","BHEL","BIOCON","BOSCHLTD","BPCL",
-    "BRITANNIA","BSOFT","CANBK","CANFINHOME","CDSL","CESC","CHOLAFIN",
-    "CIPLA","COALINDIA","COFORGE","COLPAL","CONCOR","COROMANDEL",
-    "CROMPTON","CUB","CUMMINSIND","DABUR","DALBHARAT","DEEPAKNTR",
-    "DELTACORP","DIVISLAB","DIXON","DLF","DMART","DRREDDY","EICHERMOT",
-    "ESCORTS","EXIDEIND","FEDERALBNK","FINNIFTY","FORTIS","GAIL",
-    "GLENMARK","GMRINFRA","GNFC","GODREJCP","GODREJPROP","GRANULES",
-    "GRASIM","GSPL","GUJGASLTD","HAL","HAVELLS","HCLTECH","HDFCAMC",
-    "HDFCBANK","HDFCLIFE","HEROMOTOCO","HINDALCO","HINDCOPPER",
-    "HINDPETRO","HINDUNILVR","HONAUT","IBULHSGFIN","ICICIBANK",
-    "ICICIGI","ICICIPRULI","IDEA","IDFCFIRSTB","IEX","IGL","INDHOTEL",
-    "INDIAMART","INDUSINDBK","INDUSTOWER","INFY","IOC","IPCALAB",
-    "IRCTC","ISEC","ITC","JINDALSTEL","JKCEMENT","JSWSTEEL",
-    "JUBLFOOD","KAYNES","KOTAKBANK","KPITTECH","L&TFH","LALPATHLAB","LAURUSLABS",
-    "LICHSGFIN","LT","LTIM","LTTS","LUPIN","M&M","M&MFIN",
-    "MANAPPURAM","MARICO","MARUTI","MCDOWELL-N","MCX","METROPOLIS",
-    "MFSL","MGL","MPHASIS","MRF","MUTHOOTFIN","NAUKRI","NAVINFLUOR",
-    "NESTLEIND","NMDC","NTPC","OBEROIRLTY","OFSS","ONGC","PAGEIND",
-    "PEL","PERSISTENT","PETRONET","PFC","PIDILITIND","PIIND","PNB",
-    "POLYCAB","POWERGRID","PVRINOX","RAMCOCEM","RBLBANK","RECLTD",
-    "RELIANCE","SAIL","SBICARD","SBILIFE","SBIN","SHREECEM",
-    "SHRIRAMFIN","SIEMENS","SRF","SUNPHARMA","SUNTV","SUPREMEIND",
-    "SYNGENE","TATACHEM","TATACOMM","TATACONSUM","TATAMOTORS",
-    "TATAPOWER","TATASTEEL","TCS","TECHM","TITAN","TORNTPHARM",
-    "TORNTPOWER","TRENT","TVSMOTOR","UBL","ULTRACEMCO","UNIONBANK",
-    "UPL","VEDL","VOLTAS","WIPRO","ZEEL","ZOMATO","ZYDUSLIFE",
-]
+
+def format_float_clean(val) -> str:
+    """Format float to max 2 decimals without trailing zero glitches."""
+    try:
+        f = round(float(val), 2)
+        s = f"{f:.2f}".rstrip('0').rstrip('.')
+        return s if s else "0"
+    except Exception:
+        return str(val)
+
+
+def format_price_clean(val) -> str:
+    """Format a price to exactly 2 decimal places."""
+    try:
+        return f"{float(val):.2f}"
+    except Exception:
+        return str(val)
+
+# Fallback official NSE F&O universe (strictly active, DELTACORP excluded)
+DEFAULT_FNO_SYMBOLS: list[str] = sorted(list(mu.FALLBACK_FNO_SYMBOLS))
 
 # ---------------------------------------------------------------------------
 # DATA HELPERS & CACHING
@@ -108,8 +96,8 @@ def calculate_52w_high_low(ref_date: datetime.date | None = None) -> tuple[dict[
                 for _, r in df.iterrows():
                     sym = str(r["SYMBOL"]).strip()
                     try:
-                        h = float(r["HIGH_PRICE"])
-                        l = float(r["LOW_PRICE"])
+                        h = round(float(r["HIGH_PRICE"]), 2)
+                        l = round(float(r["LOW_PRICE"]), 2)
                         if sym not in highs or h > highs[sym]:
                             highs[sym] = h
                         if sym not in lows or l < lows[sym]:
@@ -123,8 +111,8 @@ def calculate_52w_high_low(ref_date: datetime.date | None = None) -> tuple[dict[
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def calculate_7d_and_10d_avg_volumes(ref_date: datetime.date | None = None) -> tuple[dict[str, float], dict[str, float]]:
-    """Calculate both 7-Day and 10-Day Average Daily Traded Volumes."""
+def calculate_7d_and_10d_avg_volumes(ref_date: datetime.date | None = None) -> tuple[dict[str, int], dict[str, int]]:
+    """Calculate both 7-Day and 10-Day Average Daily Traded Volumes rounded to clean integers."""
     data_dirs = [pathlib.Path("data"), pathlib.Path(__file__).parent / "data", pathlib.Path(".")]
     csv_files = []
     for d in data_dirs:
@@ -160,69 +148,67 @@ def calculate_7d_and_10d_avg_volumes(ref_date: datetime.date | None = None) -> t
     avg7_dict = {}
     avg10_dict = {}
     if f7:
-        s7 = pd.concat(f7, ignore_index=True).groupby("SYMBOL")["TTL_TRD_QNTY"].mean().round(0)
+        s7 = pd.concat(f7, ignore_index=True).groupby("SYMBOL")["TTL_TRD_QNTY"].mean().round(0).astype(int)
         avg7_dict = s7.to_dict()
     if f10:
-        s10 = pd.concat(f10, ignore_index=True).groupby("SYMBOL")["TTL_TRD_QNTY"].mean().round(0)
+        s10 = pd.concat(f10, ignore_index=True).groupby("SYMBOL")["TTL_TRD_QNTY"].mean().round(0).astype(int)
         avg10_dict = s10.to_dict()
 
     return avg7_dict, avg10_dict
 
 
 def format_turnover_cr(val_lacs: float) -> str:
-    """Format turnover from Lakhs into readable Indian Crores."""
+    """Format turnover from Lakhs into readable Indian Crores (rounded to 2 clean decimals)."""
     try:
         val_lacs = float(val_lacs)
         cr = val_lacs / 100.0
         if cr >= 100_000:
             return f"₹{cr/100_000:.2f} Lakh Cr"
         elif cr >= 1_000:
-            return f"₹{cr:,.1f} Cr"
+            return f"₹{cr:,.2f} Cr"
         elif cr >= 1:
             return f"₹{cr:.2f} Cr"
         else:
-            return f"₹{val_lacs:.1f} L"
+            return f"₹{val_lacs:.2f} L"
     except Exception:
         return "Data unavailable"
 
 
-def format_volume_with_tag(qty: float) -> str:
-    """Format volume with full comma separation and readable tag."""
+def format_volume_clean(qty: float) -> str:
+    """Format volume cleanly with comma separation without trailing decimals."""
     try:
-        q = int(qty)
-        if q >= 10_000_000:
-            tag = f"{q / 10_000_000:.2f} Cr"
-        elif q >= 1_000_000:
-            tag = f"{q / 1_000_000:.2f}M"
-        elif q >= 1_000:
-            tag = f"{q / 1_000:.1f}K"
-        else:
-            tag = str(q)
-        return f"{q:,} ({tag})"
+        q = int(round(float(qty)))
+        return f"{q:,}"
     except Exception:
-        return "Data unavailable"
+        return "0"
 
 
 def build_colorful_volume_bar(ratio: float) -> str:
-    """Generate colorful high-contrast visual bar (Orange/Green/Blue/Purple) - NEVER white!"""
+    """
+    Generate vibrant volume surge bar.
+    TOP INTENSITY VOLUME BAR IS VIBRANT EMERALD GREEN (🚀 🟩🟩🟩🟩🟩)!
+    """
     try:
-        r = float(ratio)
+        r = round(float(ratio), 2)
         if r <= 0:
-            return "🟪 0.00x"
-        if r >= 2.5:
-            return f"🔥 🟧🟧🟧🟧🟧 {r:.2f}x"
-        elif r >= 2.0:
-            return f"🔥 🟧🟧🟧🟧 {r:.2f}x"
+            return "⬜ 0.00x"
+        if r >= 2.0:
+            # Top intensity volume: Vibrant Emerald Green!
+            return f"🚀 🟩🟩🟩🟩🟩 {r:.2f}x"
         elif r >= 1.5:
-            return f"⚡ 🟩🟩🟩 {r:.2f}x"
-        elif r >= 1.0:
-            return f"⚡ 🟩🟩 {r:.2f}x"
-        elif r >= 0.7:
-            return f"📊 🟦🟦 {r:.2f}x"
+            # High volume: Bright Green!
+            return f"⚡ 🟩🟩🟩🟩 {r:.2f}x"
+        elif r >= 1.2:
+            # Above average volume: Cyan/Blue!
+            return f"📊 🟦🟦🟦 {r:.2f}x"
+        elif r >= 0.8:
+            # Normal volume: Warm Gold!
+            return f"🟨🟨 {r:.2f}x"
         else:
-            return f"💤 🟪 {r:.2f}x"
+            # Below average: Muted!
+            return f"💤 ⬜ {r:.2f}x"
     except Exception:
-        return "🟪 0.00x"
+        return "⬜ 0.00x"
 
 
 # ---------------------------------------------------------------------------
@@ -281,13 +267,14 @@ def _style_dist_low(val):
 
 def _style_vol_bar_cell(val):
     s = str(val)
-    if "🔥" in s or "🟧" in s:
-        return "background-color: rgba(249, 115, 22, 0.22); color: #fb923c; font-weight: 800; border-radius: 6px;"
-    elif "⚡" in s or "🟩" in s:
-        return "background-color: rgba(16, 185, 129, 0.20); color: #34d399; font-weight: 700; border-radius: 6px;"
+    if "🟩" in s or "🚀" in s or "⚡" in s:
+        # Top intensity volume: Glowing Emerald Green!
+        return "background-color: rgba(0, 230, 118, 0.22); color: #00ff88; font-weight: 800; border: 1px solid rgba(0, 230, 118, 0.45); border-radius: 6px; text-align: center;"
     elif "🟦" in s:
-        return "background-color: rgba(59, 130, 246, 0.18); color: #60a5fa; font-weight: 600; border-radius: 6px;"
-    return "background-color: rgba(148, 163, 184, 0.12); color: #cbd5e1; border-radius: 6px;"
+        return "background-color: rgba(56, 189, 248, 0.18); color: #38bdf8; font-weight: 700; border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 6px; text-align: center;"
+    elif "🟨" in s:
+        return "background-color: rgba(251, 191, 36, 0.15); color: #fbbf24; font-weight: 600; border-radius: 6px; text-align: center;"
+    return "background-color: rgba(148, 163, 184, 0.10); color: #94a3b8; border-radius: 6px; text-align: center;"
 
 
 def _style_ban(val):
@@ -296,9 +283,30 @@ def _style_ban(val):
     return "color: #2dd4bf; font-weight: 600;"
 
 
+def _style_mcap(val):
+    if val == "Large Cap":
+        return "color: #c084fc; font-weight: 700; background-color: rgba(192, 132, 252, 0.12); border-radius: 4px;"
+    elif val == "Mid Cap":
+        return "color: #38bdf8; font-weight: 700; background-color: rgba(56, 189, 248, 0.12); border-radius: 4px;"
+    elif val == "Small Cap":
+        return "color: #fbbf24; font-weight: 700; background-color: rgba(251, 191, 36, 0.12); border-radius: 4px;"
+    return "color: #94a3b8;"
+
+
 def apply_colorful_terminal_styling(df: pd.DataFrame):
-    """Apply rich colorful styling across all master columns."""
-    styler = df.style
+    """Apply rich colorful styling across all master columns with strict 2-decimal formatting."""
+    # Ensure Styler formats any float with 2 decimal places max
+    formatter = {}
+    for col in df.columns:
+        if any(c in col for c in ["LTP", "52W High", "52W Low", "Close"]):
+            formatter[col] = lambda x: f"₹{float(x):.2f}" if isinstance(x, (int, float)) and pd.notna(x) else str(x)
+        elif any(c in col for c in ["Change", "Delivery", "Dist", "%"]):
+            formatter[col] = lambda x: f"{float(x):.2f}%" if isinstance(x, (int, float)) and pd.notna(x) else str(x)
+        elif "Surge" in col and "Num" not in col and "Bar" not in col:
+            formatter[col] = lambda x: f"{float(x):.2f}x" if isinstance(x, (int, float)) and pd.notna(x) else str(x)
+
+    styler = df.style.format(formatter, precision=2)
+
     if "Change (%)" in df.columns:
         styler = styler.map(_style_change, subset=["Change (%)"])
     if "Delivery (%)" in df.columns:
@@ -311,7 +319,31 @@ def apply_colorful_terminal_styling(df: pd.DataFrame):
         styler = styler.map(_style_vol_bar_cell, subset=["Volume Intensity Bar"])
     if "Ban Status" in df.columns:
         styler = styler.map(_style_ban, subset=["Ban Status"])
+    if "Market Cap" in df.columns:
+        styler = styler.map(_style_mcap, subset=["Market Cap"])
     return styler
+
+
+# Column config for clean numeric display (max 2 decimals)
+_FNO_CFG = {
+    "Symbol":                  st.column_config.TextColumn("Symbol"),
+    "Sector":                  st.column_config.TextColumn("Sector"),
+    "Market Cap":              st.column_config.TextColumn("Market Cap"),
+    "LTP (₹)":               st.column_config.TextColumn("LTP (₹)"),
+    "Change (%)":              st.column_config.TextColumn("Chg (%)"),
+    "Today's Volume":          st.column_config.TextColumn("Today Vol"),
+    "7D Avg Volume":           st.column_config.TextColumn("7D Avg Vol"),
+    "10D Avg Volume":          st.column_config.TextColumn("10D Avg Vol"),
+    "Volume Surge (vs 7D)":    st.column_config.TextColumn("Surge 7D"),
+    "Volume Intensity Bar":    st.column_config.TextColumn("Vol Intensity"),
+    "Delivery (%)":            st.column_config.TextColumn("Del %"),
+    "52W High (₹)":           st.column_config.TextColumn("52W High"),
+    "Dist 52W High (%)":       st.column_config.TextColumn("Dist Hi %"),
+    "52W Low (₹)":            st.column_config.TextColumn("52W Low"),
+    "Dist 52W Low (%)":        st.column_config.TextColumn("Dist Lo %"),
+    "Turnover":                st.column_config.TextColumn("Turnover"),
+    "Ban Status":              st.column_config.TextColumn("Status"),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -331,10 +363,12 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
     if "SERIES" in df.columns:
         df = df[df["SERIES"].str.strip() == "EQ"].copy()
 
-    # Determine F&O Universe
+    # Determine Active Official F&O Universe (dynamic from NSE + fallback, DELTACORP excluded)
+    active_fnos = mu.fetch_active_fno_symbols()
     ban_set = fetch_fo_ban_list()
-    fno_universe = set(DEFAULT_FNO_SYMBOLS) | ban_set
+    fno_universe = (active_fnos | ban_set) - {"DELTACORP"}
     fno_raw = df[df["SYMBOL"].isin(fno_universe)].copy()
+    mcap_universes = mu.fetch_market_cap_universes()
 
     if fno_raw.empty:
         st.warning("⚠️ No F&O symbols found in the loaded session.")
@@ -346,7 +380,7 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
         if col in fno_raw.columns:
             fno_raw[col] = pd.to_numeric(fno_raw[col], errors="coerce").fillna(0.0)
 
-    # Calculate % Change
+    # Calculate % Change rounded cleanly to 2 decimals
     if "PCT_CHANGE" not in fno_raw.columns:
         fno_raw["PCT_CHANGE"] = ((fno_raw["CLOSE_PRICE"] - fno_raw["PREV_CLOSE"]) / fno_raw["PREV_CLOSE"] * 100).round(2).fillna(0.0)
 
@@ -360,15 +394,16 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
     records = []
     for _, r in fno_raw.iterrows():
         sym = str(r["SYMBOL"]).strip()
-        close = float(r["CLOSE_PRICE"])
-        pct_chg = float(r["PCT_CHANGE"])
-        today_vol = float(r["TTL_TRD_QNTY"])
-        deliv = float(r.get("DELIV_PER", 0.0))
+        close = round(float(r["CLOSE_PRICE"]), 2)
+        pct_chg = round(float(r["PCT_CHANGE"]), 2)
+        today_vol = int(round(float(r["TTL_TRD_QNTY"])))
+        deliv = round(float(r.get("DELIV_PER", 0.0)), 2)
         t_lacs = float(r.get("TURNOVER_LACS", (close * today_vol) / 100_000.0))
+        t_cr = round(t_lacs / 100.0, 2)
 
         # 52W Metrics
-        h52 = highs_52w.get(sym, float(r.get("HIGH_PRICE", close)))
-        l52 = lows_52w.get(sym, float(r.get("LOW_PRICE", close)))
+        h52 = round(highs_52w.get(sym, float(r.get("HIGH_PRICE", close))), 2)
+        l52 = round(lows_52w.get(sym, float(r.get("LOW_PRICE", close))), 2)
         if h52 <= 0: h52 = close
         if l52 <= 0: l52 = close
 
@@ -376,35 +411,45 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
         dist_lo_pct = round(((close / l52) - 1.0) * 100.0, 2)
 
         # Volume Metrics: 7D & 10D
-        v7 = avg7_dict.get(sym, today_vol)
-        v10 = avg10_dict.get(sym, today_vol)
+        v7 = int(avg7_dict.get(sym, today_vol))
+        v10 = int(avg10_dict.get(sym, today_vol))
         if v7 <= 0: v7 = today_vol
         if v10 <= 0: v10 = today_vol
 
         surge_7d = round(today_vol / v7, 2) if v7 > 0 else 1.00
+        surge_7d_str = f"{surge_7d:.2f}".rstrip('0').rstrip('.')
         surge_10d = round(today_vol / v10, 2) if v10 > 0 else 1.00
+        surge_10d_str = f"{surge_10d:.2f}".rstrip('0').rstrip('.')
 
         # Ban status
         is_banned = sym in ban_set
         ban_label = "🚫 BAN" if is_banned else "Normal"
+        mcap = mu.get_market_cap_category(sym, mcap_universes)
+        sector = mu.get_sector_category(sym)
 
         records.append({
             "Symbol": sym,
+            "Sector": sector,
+            "Market Cap": mcap,
             "LTP (₹)": close,
             "Change (%)": pct_chg,
-            "Raw Today Volume": int(today_vol),
-            "Today's Volume": format_volume_with_tag(today_vol),
-            "7D Avg Volume": format_volume_with_tag(v7),
-            "10D Avg Volume": format_volume_with_tag(v10),
-            "Volume Surge (vs 7D)": f"{surge_7d:.2f}x",
+            "Change_num": pct_chg,
+            "Raw Today Volume": today_vol,
+            "Today's Volume": format_volume_clean(today_vol),
+            "7D Avg Volume": format_volume_clean(v7),
+            "10D Avg Volume": format_volume_clean(v10),
+            "Volume Surge (vs 7D)": f"{surge_7d_str}x",
             "Vol Surge Num": surge_7d,
             "Volume Intensity Bar": build_colorful_volume_bar(surge_7d),
             "Delivery (%)": deliv,
+            "Delivery_num": deliv,
             "52W High (₹)": h52,
             "Dist 52W High (%)": dist_hi_pct,
+            "Dist_hi_num": dist_hi_pct,
             "52W Low (₹)": l52,
             "Dist 52W Low (%)": dist_lo_pct,
-            "Turnover (₹Cr)": round(t_lacs / 100.0, 2),
+            "Dist_lo_num": dist_lo_pct,
+            "Turnover (₹Cr)": t_cr,
             "Turnover": format_turnover_cr(t_lacs),
             "Ban Status": ban_label,
             "Is Banned": is_banned,
@@ -416,11 +461,11 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
     # TOP MARKET METRICS CARDS (COLOURFUL INSTITUTIONAL DESIGN)
     # -----------------------------------------------------------------------
     total_fno = len(fno_master)
-    near_high_cnt = len(fno_master[fno_master["Dist 52W High (%)"] >= -5.0])
-    near_low_cnt = len(fno_master[fno_master["Dist 52W Low (%)"] <= 5.0])
+    near_high_cnt = len(fno_master[fno_master["Dist_hi_num"] >= -5.0])
+    near_low_cnt = len(fno_master[fno_master["Dist_lo_num"] <= 5.0])
     ban_cnt = len(ban_set)
     vol_surge_cnt = len(fno_master[fno_master["Vol Surge Num"] >= 1.5])
-    total_to_cr = fno_master["Turnover (₹Cr)"].sum()
+    total_to_cr = round(fno_master["Turnover (₹Cr)"].sum(), 2)
 
     st.markdown("""
     <div class="sec-hdr blue" style="margin-top: 1.2rem; margin-bottom: 0.8rem;">
@@ -452,7 +497,7 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
     with m5:
         st.metric("Volume Spikes (>1.5x 7D)", vol_surge_cnt, delta="High Activity" if vol_surge_cnt > 0 else None)
     with m6:
-        st.metric("Total F&O Turnover", f"₹{total_to_cr:,.1f} Cr")
+        st.metric("Total F&O Turnover", f"₹{total_to_cr:,.2f} Cr")
 
     # -----------------------------------------------------------------------
     # VOLUME RADAR SPOTLIGHT
@@ -476,21 +521,21 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
                 <div style="font-size: 0.72rem; color: #93c5fd; font-weight: 700; text-transform: uppercase;">👑 Most Traded Today</div>
                 <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px;">
                     <span style="font-size: 1.15rem; font-weight: 800; color: #ffffff;">{t_vol_sym}</span>
-                    <span style="font-size: 0.92rem; font-weight: 700; color: #38bdf8;">{t_vol_val} ({t_vol_to})</span>
+                    <span style="font-size: 0.92rem; font-weight: 700; color: #38bdf8;">{t_vol_val} shares ({t_vol_to})</span>
+                </div>
+            </div>
+            <div style="flex: 1; min-width: 260px; background: linear-gradient(135deg, rgba(0,230,118,0.15), rgba(6,95,70,0.3)); border: 1px solid rgba(0,230,118,0.4); border-radius: 10px; padding: 10px 14px;">
+                <div style="font-size: 0.72rem; color: #6ee7b7; font-weight: 700; text-transform: uppercase;">🚀 Top Green Volume Surge</div>
+                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px;">
+                    <span style="font-size: 1.15rem; font-weight: 800; color: #ffffff;">{t_surge_sym}</span>
+                    <span style="font-size: 0.92rem; font-weight: 700; color: #00ff88;">{t_surge_val} 7-Day Average</span>
                 </div>
             </div>
             <div style="flex: 1; min-width: 260px; background: linear-gradient(135deg, rgba(245,158,11,0.15), rgba(180,83,9,0.3)); border: 1px solid rgba(245,158,11,0.4); border-radius: 10px; padding: 10px 14px;">
-                <div style="font-size: 0.72rem; color: #fcd34d; font-weight: 700; text-transform: uppercase;">🔥 Highest 7D Volume Surge</div>
-                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px;">
-                    <span style="font-size: 1.15rem; font-weight: 800; color: #ffffff;">{t_surge_sym}</span>
-                    <span style="font-size: 0.92rem; font-weight: 700; color: #fbbf24;">{t_surge_val} 7-Day Average</span>
-                </div>
-            </div>
-            <div style="flex: 1; min-width: 260px; background: linear-gradient(135deg, rgba(16,185,129,0.15), rgba(6,95,70,0.3)); border: 1px solid rgba(16,185,129,0.4); border-radius: 10px; padding: 10px 14px;">
-                <div style="font-size: 0.72rem; color: #6ee7b7; font-weight: 700; text-transform: uppercase;">💎 Institutional Delivery Leader</div>
+                <div style="font-size: 0.72rem; color: #fcd34d; font-weight: 700; text-transform: uppercase;">💎 Institutional Delivery Leader</div>
                 <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px;">
                     <span style="font-size: 1.15rem; font-weight: 800; color: #ffffff;">{t_deliv_sym}</span>
-                    <span style="font-size: 0.92rem; font-weight: 700; color: #34d399;">{t_deliv_val}% Delivery</span>
+                    <span style="font-size: 0.92rem; font-weight: 700; color: #fbbf24;">{t_deliv_val}% Delivery</span>
                 </div>
             </div>
         </div>
@@ -510,12 +555,12 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
             <div class="chips"><span class="chip">Within 5% of Peak</span></div>
         </div>
         """, unsafe_allow_html=True)
-        hi_df = fno_master[fno_master["Dist 52W High (%)"] >= -5.0].sort_values("Dist 52W High (%)", ascending=False)
+        hi_df = fno_master[fno_master["Dist_hi_num"] >= -5.0].sort_values("Dist_hi_num", ascending=False)
         if hi_df.empty:
             st.info("No F&O stocks currently within 5% of their 52-week high.")
         else:
             disp_hi = hi_df[["Symbol", "LTP (₹)", "Change (%)", "52W High (₹)", "Dist 52W High (%)", "Today's Volume", "7D Avg Volume", "Volume Intensity Bar", "Turnover"]]
-            st.dataframe(apply_colorful_terminal_styling(disp_hi), use_container_width=True, hide_index=True, height=280)
+            st.dataframe(apply_colorful_terminal_styling(disp_hi), use_container_width=True, hide_index=True, height=280, column_config=_FNO_CFG)
 
     with col_lo:
         st.markdown("""
@@ -524,12 +569,12 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
             <div class="chips"><span class="chip">Within 5% of Bottom</span></div>
         </div>
         """, unsafe_allow_html=True)
-        lo_df = fno_master[fno_master["Dist 52W Low (%)"] <= 5.0].sort_values("Dist 52W Low (%)", ascending=True)
+        lo_df = fno_master[fno_master["Dist_lo_num"] <= 5.0].sort_values("Dist_lo_num", ascending=True)
         if lo_df.empty:
             st.info("No F&O stocks currently within 5% of their 52-week low.")
         else:
             disp_lo = lo_df[["Symbol", "LTP (₹)", "Change (%)", "52W Low (₹)", "Dist 52W Low (%)", "Today's Volume", "7D Avg Volume", "Volume Intensity Bar", "Turnover"]]
-            st.dataframe(apply_colorful_terminal_styling(disp_lo), use_container_width=True, hide_index=True, height=280)
+            st.dataframe(apply_colorful_terminal_styling(disp_lo), use_container_width=True, hide_index=True, height=280, column_config=_FNO_CFG)
 
     # F&O Ban Banner Section
     st.markdown("""
@@ -545,12 +590,12 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
     else:
         st.warning(f"⚠️ **{len(banned_df)} Securities in Ban:** {', '.join(banned_df['Symbol'].tolist())}")
         disp_ban = banned_df[["Symbol", "LTP (₹)", "Change (%)", "Today's Volume", "7D Avg Volume", "Turnover", "Ban Status"]]
-        st.dataframe(apply_colorful_terminal_styling(disp_ban), use_container_width=True, hide_index=True, height=180)
+        st.dataframe(apply_colorful_terminal_styling(disp_ban), use_container_width=True, hide_index=True, height=180, column_config=_FNO_CFG)
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
     # -----------------------------------------------------------------------
-    # MASTER F&O STOCKS DIRECTORY (COLOURFUL, EXPLICIT "TODAY'S VOLUME", NEVER WHITE)
+    # MASTER F&O STOCKS DIRECTORY (COLOURFUL, EXPLICIT "TODAY'S VOLUME", GREEN TOP BARS)
     # -----------------------------------------------------------------------
     st.markdown("""
     <div class="sec-hdr blue" style="margin-bottom: 0.6rem;">
@@ -559,18 +604,21 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
             <span class="chip" style="background:rgba(59,130,246,0.18); color:#60a5fa; border:1px solid rgba(59,130,246,0.35);">Today's Volume</span>
             <span class="chip" style="background:rgba(16,185,129,0.18); color:#34d399; border:1px solid rgba(16,185,129,0.35);">7D Avg Volume</span>
             <span class="chip" style="background:rgba(245,158,11,0.18); color:#fbbf24; border:1px solid rgba(245,158,11,0.35);">10D Avg Volume</span>
-            <span class="chip" style="background:rgba(139,92,246,0.18); color:#c084fc; border:1px solid rgba(139,92,246,0.35);">Colorful Volume Bars</span>
+            <span class="chip" style="background:rgba(0,230,118,0.18); color:#00ff88; border:1px solid rgba(0,230,118,0.35);">Green Intensity Bars</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Quick Filters & Search Bar
-    qf_col1, qf_col2 = st.columns([1, 2])
+    # Quick Filters, Sector Filter & Search Bar
+    qf_col1, qf_col2, qf_col3 = st.columns([1.2, 1.2, 1.6])
     with qf_col1:
         quick_filter = st.selectbox(
             "Quick Filter",
             options=[
                 "All F&O Stocks",
+                "💎 Large Cap F&O Only (Nifty 100)",
+                "🚀 Mid Cap F&O Only (Nifty Midcap 150)",
+                "🌱 Small Cap F&O Only (Nifty Smallcap 250)",
                 "🔥 Near 52W High (≤5%)",
                 "📉 Near 52W Low (≤5%)",
                 "🚫 F&O Ban Only",
@@ -584,6 +632,12 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
             key="fno_master_filter_select"
         )
     with qf_col2:
+        sector_filter = st.selectbox(
+            "Sector Filter",
+            options=mu.SECTOR_OPTIONS,
+            key="fno_master_sector_select"
+        )
+    with qf_col3:
         search_sym = st.text_input(
             "Search Symbol",
             placeholder="🔍 Search symbol (e.g. RELIANCE, TCS, INFY, SBIN, TATA...)",
@@ -593,10 +647,16 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
     # Filter Application
     filtered_df = fno_master.copy()
 
-    if quick_filter == "🔥 Near 52W High (≤5%)":
-        filtered_df = filtered_df[filtered_df["Dist 52W High (%)"] >= -5.0]
+    if quick_filter == "💎 Large Cap F&O Only (Nifty 100)":
+        filtered_df = filtered_df[filtered_df["Market Cap"] == "Large Cap"]
+    elif quick_filter == "🚀 Mid Cap F&O Only (Nifty Midcap 150)":
+        filtered_df = filtered_df[filtered_df["Market Cap"] == "Mid Cap"]
+    elif quick_filter == "🌱 Small Cap F&O Only (Nifty Smallcap 250)":
+        filtered_df = filtered_df[filtered_df["Market Cap"] == "Small Cap"]
+    elif quick_filter == "🔥 Near 52W High (≤5%)":
+        filtered_df = filtered_df[filtered_df["Dist_hi_num"] >= -5.0]
     elif quick_filter == "📉 Near 52W Low (≤5%)":
-        filtered_df = filtered_df[filtered_df["Dist 52W Low (%)"] <= 5.0]
+        filtered_df = filtered_df[filtered_df["Dist_lo_num"] <= 5.0]
     elif quick_filter == "🚫 F&O Ban Only":
         filtered_df = filtered_df[filtered_df["Is Banned"] == True]
     elif quick_filter == "📊 High 7D Volume Surge (>1.5x)":
@@ -606,18 +666,24 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
     elif quick_filter == "💰 High Turnover (>₹250 Cr)":
         filtered_df = filtered_df[filtered_df["Turnover (₹Cr)"] >= 250.0]
     elif quick_filter == "📈 Top Gainers (>2%)":
-        filtered_df = filtered_df[filtered_df["Change (%)"] >= 2.0]
+        filtered_df = filtered_df[filtered_df["Change_num"] >= 2.0]
     elif quick_filter == "🔻 Top Losers (<-2%)":
-        filtered_df = filtered_df[filtered_df["Change (%)"] <= -2.0]
+        filtered_df = filtered_df[filtered_df["Change_num"] <= -2.0]
     elif quick_filter == "📦 Institutional Delivery (≥50%)":
-        filtered_df = filtered_df[filtered_df["Delivery (%)"] >= 50.0]
+        filtered_df = filtered_df[filtered_df["Delivery_num"] >= 50.0]
+
+    if sector_filter != "All Sectors":
+        filtered_df = filtered_df[filtered_df["Sector"] == sector_filter]
 
     if search_sym.strip():
-        filtered_df = filtered_df[filtered_df["Symbol"].str.contains(search_sym.strip().upper(), case=False, na=False)]
+        sym_clean = search_sym.strip().upper()
+        filtered_df = filtered_df[filtered_df["Symbol"].str.upper().str.strip().str.contains(sym_clean, case=False, na=False)]
 
-    # Comprehensive Display Columns with explicit "Today's Volume"
+    # Comprehensive Display Columns with explicit Sector, Market Cap & Today's Volume
     display_cols = [
         "Symbol",
+        "Sector",
+        "Market Cap",
         "LTP (₹)",
         "Change (%)",
         "Today's Volume",
@@ -641,11 +707,16 @@ def render_fno_dashboard(raw_df: pd.DataFrame | None = None, trade_date: datetim
     </div>
     """, unsafe_allow_html=True)
 
-    # Render Colorful Master Table
-    styled_table = apply_colorful_terminal_styling(filtered_df[display_cols].sort_values("Change (%)", ascending=False))
+    # Render Colorful Master Table — sort by numeric change column
+    styled_table = apply_colorful_terminal_styling(
+        filtered_df[display_cols].assign(
+            _sort=filtered_df["Change_num"]
+        ).sort_values("_sort", ascending=False).drop(columns=["_sort"])
+    )
     st.dataframe(
         styled_table,
         use_container_width=True,
         hide_index=True,
         height=580,
+        column_config=_FNO_CFG,
     )

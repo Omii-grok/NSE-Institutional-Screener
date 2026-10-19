@@ -14,11 +14,22 @@ import io
 import glob
 import datetime
 import pathlib
+import sys
 import requests
 import pandas as pd
 import pytz
 import streamlit as st
-from scanner_tab import render_chart_scans_tab
+import market_universe as mu
+
+# Safely import scanner tab drop-in module
+try:
+    from scanner_tab import render_chart_scans_tab
+except ImportError:
+    parent_dir = str(pathlib.Path(__file__).parent.parent)
+    if parent_dir not in sys.path:
+        sys.path.append(parent_dir)
+    from scanner_tab import render_chart_scans_tab
+
 
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -311,40 +322,10 @@ NSE_HOLIDAYS: set[datetime.date] = {
     datetime.date(2026, 11, 9), datetime.date(2026, 12, 25),
 }
 
-FNO_SYMBOLS: list[str] = [
-    "AARTIIND","ABB","ABBOTINDIA","ABCAPITAL","ABFRL","ACC","ADANIENT",
-    "ADANIPORTS","ALKEM","AMBUJACEM","ANGELONE","APLAPOLLO","APOLLOHOSP",
-    "APOLLOTYRE","ASHOKLEY","ASIANPAINT","ASTRAL","ATUL","AUBANK",
-    "AUROPHARMA","AXISBANK","BAJAJ-AUTO","BAJAJFINSV","BAJFINANCE",
-    "BALKRISIND","BANDHANBNK","BANKBARODA","BATAINDIA","BEL","BERGEPAINT",
-    "BHARATFORG","BHARTIARTL","BHEL","BIOCON","BOSCHLTD","BPCL",
-    "BRITANNIA","BSOFT","CANBK","CANFINHOME","CDSL","CESC","CHOLAFIN",
-    "CIPLA","COALINDIA","COFORGE","COLPAL","CONCOR","COROMANDEL",
-    "CROMPTON","CUB","CUMMINSIND","DABUR","DALBHARAT","DEEPAKNTR",
-    "DELTACORP","DIVISLAB","DIXON","DLF","DMART","DRREDDY","EICHERMOT",
-    "ESCORTS","EXIDEIND","FEDERALBNK","FINNIFTY","FORTIS","GAIL",
-    "GLENMARK","GMRINFRA","GNFC","GODREJCP","GODREJPROP","GRANULES",
-    "GRASIM","GSPL","GUJGASLTD","HAL","HAVELLS","HCLTECH","HDFCAMC",
-    "HDFCBANK","HDFCLIFE","HEROMOTOCO","HINDALCO","HINDCOPPER",
-    "HINDPETRO","HINDUNILVR","HONAUT","IBULHSGFIN","ICICIBANK",
-    "ICICIGI","ICICIPRULI","IDEA","IDFCFIRSTB","IEX","IGL","INDHOTEL",
-    "INDIAMART","INDUSINDBK","INDUSTOWER","INFY","IOC","IPCALAB",
-    "IRCTC","ISEC","ITC","JINDALSTEL","JKCEMENT","JSWSTEEL",
-    "JUBLFOOD","KOTAKBANK","KPITTECH","L&TFH","LALPATHLAB","LAURUSLABS",
-    "LICHSGFIN","LT","LTIM","LTTS","LUPIN","M&M","M&MFIN",
-    "MANAPPURAM","MARICO","MARUTI","MCDOWELL-N","MCX","METROPOLIS",
-    "MFSL","MGL","MPHASIS","MRF","MUTHOOTFIN","NAUKRI","NAVINFLUOR",
-    "NESTLEIND","NMDC","NTPC","OBEROIRLTY","OFSS","ONGC","PAGEIND",
-    "PEL","PERSISTENT","PETRONET","PFC","PIDILITIND","PIIND","PNB",
-    "POLYCAB","POWERGRID","PVRINOX","RAMCOCEM","RBLBANK","RECLTD",
-    "RELIANCE","SAIL","SBICARD","SBILIFE","SBIN","SHREECEM",
-    "SHRIRAMFIN","SIEMENS","SRF","SUNPHARMA","SUNTV","SUPREMEIND",
-    "SYNGENE","TATACHEM","TATACOMM","TATACONSUM","TATAMOTORS",
-    "TATAPOWER","TATASTEEL","TCS","TECHM","TITAN","TORNTPHARM",
-    "TORNTPOWER","TRENT","TVSMOTOR","UBL","ULTRACEMCO","UNIONBANK",
-    "UPL","VEDL","VOLTAS","WIPRO","ZEEL","ZOMATO","ZYDUSLIFE",
-]
-FNO_SET: set[str] = set(FNO_SYMBOLS)
+# Dynamic Official NSE F&O Universe (Fetched live, DELTACORP strictly excluded)
+FNO_SET: set[str] = mu.fetch_active_fno_symbols()
+FNO_SYMBOLS: list[str] = sorted(list(FNO_SET))
+
 
 # ─────────────────────────────────────────────────────────────
 # DATE HELPERS
@@ -503,12 +484,17 @@ def fetch_avg_volumes(ref_date: datetime.date | None = None) -> tuple[pd.Series,
 DCOLS = ["SYMBOL","CLOSE_PRICE","PCT_CHANGE","TTL_TRD_QNTY","DELIV_PER"]
 DHDRS = ["Symbol","Close (₹)","Change (%)","Today's Volume","Delivery (%)"]
 
+def _fmt2(s: pd.Series) -> pd.Series:
+    """Round to 2 decimal places and strip unnecessary trailing zeros for display."""
+    return s.round(2)
+
 def _to_display(frame: pd.DataFrame) -> pd.DataFrame:
     out = frame[DCOLS].copy()
     out.columns = DHDRS
-    out["Close (₹)"]    = out["Close (₹)"].round(2)
-    out["Change (%)"]   = out["Change (%)"].round(2)
-    out["Delivery (%)"] = out["Delivery (%)"].round(2)
+    out["Close (₹)"]    = _fmt2(out["Close (₹)"])
+    out["Change (%)"]   = _fmt2(out["Change (%)"])
+    out["Delivery (%)"] = _fmt2(out["Delivery (%)"])
+    out["Today's Volume"] = out["Today's Volume"].round(0).astype("Int64")
     return out.reset_index(drop=True)
 
 def process_data(raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, int]:
@@ -543,16 +529,15 @@ def build_fno_tracker(raw: pd.DataFrame) -> pd.DataFrame:
 
 def _build_vol_bar(ratio: float) -> str:
     try:
-        r = float(ratio)
-        if r <= 0: return "🟪 0.00x"
-        if r >= 2.5: return f"🔥 🟧🟧🟧🟧🟧 {r:.2f}x"
-        elif r >= 2.0: return f"🔥 🟧🟧🟧🟧 {r:.2f}x"
-        elif r >= 1.5: return f"⚡ 🟩🟩🟩 {r:.2f}x"
-        elif r >= 1.0: return f"⚡ 🟩🟩 {r:.2f}x"
-        elif r >= 0.7: return f"📊 🟦🟦 {r:.2f}x"
-        return f"💤 🟪 {r:.2f}x"
+        r = round(float(ratio), 2)
+        if r <= 0: return "⬜ 0.00x"
+        if r >= 2.0: return f"🚀 🟩🟩🟩🟩🟩 {r:.2f}x"
+        elif r >= 1.5: return f"⚡ 🟩🟩🟩🟩 {r:.2f}x"
+        elif r >= 1.2: return f"📊 🟦🟦🟦 {r:.2f}x"
+        elif r >= 0.8: return f"🟨🟨 {r:.2f}x"
+        return f"💤 ⬜ {r:.2f}x"
     except Exception:
-        return "🟪 0.00x"
+        return "⬜ 0.00x"
 
 def _merge_avg_vol(df: pd.DataFrame, avg7: pd.Series, avg10: pd.Series) -> pd.DataFrame:
     df = df.copy()
@@ -607,13 +592,13 @@ def _clr_surge(v):
 
 def _clr_vol_bar_cell(val):
     s = str(val)
-    if "🔥" in s or "🟧" in s:
-        return "background-color: rgba(249, 115, 22, 0.22); color: #fb923c; font-weight: 800; border-radius: 6px;"
-    elif "⚡" in s or "🟩" in s:
-        return "background-color: rgba(16, 185, 129, 0.20); color: #34d399; font-weight: 700; border-radius: 6px;"
+    if "🟩" in s or "🚀" in s or "⚡" in s:
+        return "background-color: rgba(0, 230, 118, 0.22); color: #00ff88; font-weight: 800; border: 1px solid rgba(0, 230, 118, 0.45); border-radius: 6px; text-align: center;"
     elif "🟦" in s:
-        return "background-color: rgba(59, 130, 246, 0.18); color: #60a5fa; font-weight: 600; border-radius: 6px;"
-    return "background-color: rgba(148, 163, 184, 0.12); color: #cbd5e1; border-radius: 6px;"
+        return "background-color: rgba(56, 189, 248, 0.18); color: #38bdf8; font-weight: 700; border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 6px; text-align: center;"
+    elif "🟨" in s:
+        return "background-color: rgba(251, 191, 36, 0.15); color: #fbbf24; font-weight: 600; border-radius: 6px; text-align: center;"
+    return "background-color: rgba(148, 163, 184, 0.10); color: #94a3b8; border-radius: 6px; text-align: center;"
 
 def styled(df: pd.DataFrame):
     s = df.style
@@ -625,15 +610,15 @@ def styled(df: pd.DataFrame):
 
 _CFG = {
     "Symbol":               st.column_config.TextColumn("Symbol"),
-    "Close (₹)":           st.column_config.NumberColumn("Close (₹)",           format="₹%.2f"),
-    "Change (%)":          st.column_config.NumberColumn("Change (%)",          format="%.2f%%"),
-    "Today's Volume":      st.column_config.NumberColumn("Today's Volume",      format="%d", help="Total traded quantity today"),
-    "Total Volume":        st.column_config.NumberColumn("Today's Volume",      format="%d", help="Total traded quantity today"),
-    "7D Avg Vol":          st.column_config.NumberColumn("7D Avg Vol",          format="%d", help="Average daily volume over last 7 trading days"),
-    "10D Avg Vol":         st.column_config.NumberColumn("10D Avg Vol",         format="%d", help="Average daily volume over last 10 trading days"),
-    "Vol Surge (7D)":      st.column_config.NumberColumn("Surge vs 7D",        format="%.2fx", help="Today Volume / 7-Day Average Volume"),
-    "Volume Intensity Bar":st.column_config.TextColumn("Volume Intensity",      help="Visual colorful volume surge indicator"),
-    "Delivery (%)":        st.column_config.NumberColumn("Delivery (%)",        format="%.2f%%"),
+    "Close (₹)":           st.column_config.NumberColumn("Close (₹)",    format="₹%.2f"),
+    "Change (%)":          st.column_config.NumberColumn("Change (%)",   format="%.2f%%"),
+    "Today's Volume":      st.column_config.NumberColumn("Today's Vol",  format="%d",    help="Total traded quantity today"),
+    "Total Volume":        st.column_config.NumberColumn("Today's Vol",  format="%d",    help="Total traded quantity today"),
+    "7D Avg Vol":          st.column_config.NumberColumn("7D Avg Vol",   format="%d",    help="7-day average daily volume"),
+    "10D Avg Vol":         st.column_config.NumberColumn("10D Avg Vol",  format="%d",    help="10-day average daily volume"),
+    "Vol Surge (7D)":      st.column_config.NumberColumn("Surge vs 7D",  format="%.2fx", help="Today / 7-Day Avg Volume"),
+    "Volume Intensity Bar":st.column_config.TextColumn("Vol Intensity",  help="Visual volume surge indicator"),
+    "Delivery (%)":        st.column_config.NumberColumn("Delivery (%)", format="%.2f%%"),
 }
 
 # ─────────────────────────────────────────────────────────────
@@ -678,7 +663,48 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
-        st.markdown('<div class="sb-label">🎨 Color Guide</div>', unsafe_allow_html=True)
+        # ── DATE PICKER ──────────────────────────────────────
+        st.markdown('<div class="sb-label">📅 Select Date</div>', unsafe_allow_html=True)
+        _default_date = target_date if target_date is not None else last_trading_day()
+        _min_date = datetime.date(2024, 1, 1)
+        _max_date = datetime.datetime.now(IST).date()
+        picked_date = st.date_input(
+            "Data Date",
+            value=_default_date,
+            min_value=_min_date,
+            max_value=_max_date,
+            label_visibility="collapsed",
+            key="sidebar_date_picker",
+        )
+        sb_col1, sb_col2 = st.columns(2)
+        with sb_col1:
+            if st.button("📥 Load Date", use_container_width=True, key="sb_load_date",
+                         help="Load NSE data for the selected date"):
+                st.session_state["target_date"] = picked_date
+                st.cache_data.clear()
+                st.rerun()
+        with sb_col2:
+            if st.button("⚡ Latest", use_container_width=True, key="sb_latest_btn",
+                         help="Reset to latest trading day"):
+                st.session_state["target_date"] = None
+                st.cache_data.clear()
+                st.rerun()
+
+        st.markdown('<hr class="sb-hr"><div class="sb-label">📊 Sector Filter</div>', unsafe_allow_html=True)
+        sidebar_sector = st.selectbox(
+            "Filter Sector",
+            options=mu.SECTOR_OPTIONS,
+            index=0,
+            key="global_sidebar_sector",
+            help="Filter screener data by Nifty Sector category"
+        )
+
+        if st.button("🔄 Force Refresh Data", use_container_width=True, key="sb_force_refresh",
+                     help="Clear all cached data and fetch live real-time prices"):
+            st.cache_data.clear()
+            st.rerun()
+
+        st.markdown('<hr class="sb-hr"><div class="sb-label">🎨 Color Guide</div>', unsafe_allow_html=True)
         st.markdown("""
         <div style="font-size:0.76rem;line-height:2;color:#475569;padding:0 4px">
             <span style="color:#00d47a">▲</span> Positive Change<br>
@@ -804,7 +830,7 @@ def main():
             f"📊  F&O TRACKER\n"
             f"{'━'*18}\n"
             f"  {len(fno_df):>4}  stocks\n"
-            f"~182 F&O symbols",
+            f"~{len(FNO_SET)} Active F&O",
             key="nav_fno",
             use_container_width=True,
         ):
@@ -816,7 +842,7 @@ def main():
             f"📈  TOTAL EQ\n"
             f"{'━'*18}\n"
             f"  {total_eq:>4}  stocks\n"
-            f"All EQ series",
+            f"Large/Mid/Small",
             key="nav_all",
             use_container_width=True,
         ):
@@ -891,59 +917,13 @@ def main():
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
     if view in ("overview", "fno"):
-        render_section(
-            "📊", "F&O MASTER TRACKER",
-            ["~182 F&O stocks", "EQ series", "Sorted Change % ↓", "Click header to sort"],
-            "blue", pd.DataFrame(),   # placeholder — handled separately below
-            "",
-            height=560,
-        ) if False else None   # skip — F&O needs search box, handle manually
-
-        # Integrated F&O Dashboard Analytics
+        # Integrated Master F&O Intelligence Terminal (Unified, Single Authoritative Hub)
         try:
             import fno_dashboard
             fno_dashboard.render_fno_dashboard(raw_df, trade_date)
         except Exception as e:
-            pass
+            st.error(f"F&O Dashboard error: {e}")
 
-        # F&O section header
-        chips_h = "".join(
-            f'<span class="chip">{c}</span>'
-            for c in ["~182 F&O stocks","EQ series","Sorted Change % ↓","Click header to sort"]
-        )
-        st.markdown(f"""
-        <div class="sec-hdr blue">
-            <div class="title">📊&nbsp; F&O MASTER TRACKER</div>
-            <div class="chips">{chips_h}</div>
-        </div>""", unsafe_allow_html=True)
-
-        if fno_df.empty:
-            st.markdown(
-                '<div class="empty-box">🔍 No F&O stock data found.</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            search = st.text_input(
-                "fno_search",
-                placeholder="🔍  Filter symbol  (e.g. RELIANCE, INFY, TCS, HDFC…)",
-                label_visibility="collapsed",
-                key="fno_search",
-            )
-            disp = fno_df
-            if search.strip():
-                disp = disp[disp["Symbol"].str.contains(
-                    search.strip().upper(), case=False, na=False
-                )]
-            st.markdown('<div class="tbl-wrap">', unsafe_allow_html=True)
-            st.dataframe(styled(disp), use_container_width=True,
-                         hide_index=True, height=560, column_config=_CFG)
-            st.markdown("</div>", unsafe_allow_html=True)
-            st.markdown(
-                f'<div class="row-note">'
-                f'Showing {len(disp)} of {len(fno_df)} F&O stocks'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
 
     if view == "chart_scans":
         render_chart_scans_tab()
